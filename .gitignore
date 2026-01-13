@@ -1,7 +1,11 @@
-.venv/
+# Outputs
+out/
+last_raw_output.txt
+
+# Python
 __pycache__/
 *.pyc
-.env
-*.log
+.venv/
 
-.env
+# OS
+.DS_Store
