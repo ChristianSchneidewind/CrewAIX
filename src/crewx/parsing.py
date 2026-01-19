@@ -1,100 +1,111 @@
+from __future__ import annotations
+
 import json
 import re
-from pathlib import Path
-from crewx.io import write_text
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 
-def save_raw(out_dir: str, raw: str) -> Path:
-    p = Path(out_dir) / "last_raw_output.txt"
-    write_text(str(p), (raw or ""))
-    return p
+@dataclass(frozen=True)
+class TweetType:
+    name: str
+    description: str
 
 
-def extract_json_object_from_text(raw: str) -> dict | None:
-    raw = (raw or "").strip()
-    if not raw:
-        return None
+def load_tweet_types(path: str) -> List[TweetType]:
+    """
+    Format in tweet_types.md (simple + tolerant):
 
-    extracted = None
+    # Tweet Types
+    ## marketing
+    - Description...
+    ## educational
+    - Description...
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
 
+    # Split on headings level 2 "## "
+    parts = re.split(r"(?m)^##\s+", content)
+    if len(parts) <= 1:
+        return []
+
+    tweet_types: List[TweetType] = []
+    for chunk in parts[1:]:
+        lines = chunk.strip().splitlines()
+        if not lines:
+            continue
+        name = lines[0].strip()
+        desc = "\n".join(lines[1:]).strip()
+        # remove leading bullets in description
+        desc = re.sub(r"(?m)^\s*[-*]\s+", "", desc).strip()
+        tweet_types.append(TweetType(name=name, description=desc))
+
+    return tweet_types
+
+
+def _strip_code_fences(s: str) -> str:
+    s = s.strip()
     # ```json ... ```
-    if "```" in raw:
-        m = re.search(r"```json\s*(\{.*?\})\s*```", raw, re.DOTALL | re.IGNORECASE)
-        if m:
-            extracted = m.group(1).strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", s)
+        s = re.sub(r"\s*```$", "", s)
+    return s.strip()
 
-    # outermost {...}
-    if extracted is None:
-        start = raw.find("{")
-        end = raw.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            extracted = raw[start : end + 1].strip()
 
-    if extracted is None:
-        return None
+def _extract_first_json_value(text: str) -> Any:
+    """
+    Robust-ish extraction: find first {...} block that parses as JSON.
+    """
+    text = _strip_code_fences(text)
 
+    # Quick path
     try:
-        return json.loads(extracted)
-    except json.JSONDecodeError:
-        return None
+        return json.loads(text)
+    except Exception:
+        pass
+
+    # Greedy scan for object
+    start_indices = [m.start() for m in re.finditer(r"\{", text)]
+    for start in start_indices:
+        for end in range(len(text), start, -1):
+            if text[end - 1] != "}":
+                continue
+            candidate = text[start:end]
+            try:
+                return json.loads(candidate)
+            except Exception:
+                continue
+
+    raise ValueError("Could not parse JSON from output.")
 
 
-def fallback_parse_tweets_from_text(raw: str, n_tweets: int) -> dict | None:
-    """
-    If the model doesn't return JSON, try to parse common list formats into tweets.
-    Supports:
-      - 'Tweet 1: ...'
-      - '1) ...' / '1. ...'
-      - '- ...' / '* ...'
-    """
-    raw = (raw or "").strip()
-    if not raw:
-        return None
+def parse_tweets_output(raw: str, expected_count: Optional[int] = None) -> Dict[str, Any]:
+    if raw is None or not str(raw).strip():
+        raise ValueError("Empty LLM output (raw is blank).")
 
-    tweets: list[str] = []
+    data = _extract_first_json_value(raw)
 
-    # A) "Tweet 1: ..."
-    matches = re.findall(
-        r"(?:^|\n)\s*(?:Tweet|TWEET)\s*\d+\s*[:\-]\s*(.+?)(?=\n\s*(?:Tweet|TWEET)\s*\d+\s*[:\-]|\Z)",
-        raw,
-        flags=re.DOTALL,
-    )
-    for m in matches:
-        txt = " ".join(m.strip().splitlines()).strip()
-        if txt:
-            tweets.append(txt)
+    if not isinstance(data, dict):
+        raise ValueError("Top-level JSON must be an object.")
 
-    # B) Numbered list: 1) ... or 1. ...
-    if not tweets:
-        matches = re.findall(
-            r"(?:^|\n)\s*\d+\s*[.)]\s+(.+?)(?=\n\s*\d+\s*[.)]\s+|\Z)",
-            raw,
-            flags=re.DOTALL,
-        )
-        for m in matches:
-            txt = " ".join(m.strip().splitlines()).strip()
-            if txt:
-                tweets.append(txt)
+    tweets = data.get("tweets")
+    if not isinstance(tweets, list):
+        raise ValueError('JSON must contain key "tweets" as a list.')
 
-    # C) Bullets: - ... or * ...
-    if not tweets:
-        matches = re.findall(
-            r"(?:^|\n)\s*[-*]\s+(.+?)(?=\n\s*[-*]\s+|\Z)",
-            raw,
-            flags=re.DOTALL,
-        )
-        for m in matches:
-            txt = " ".join(m.strip().splitlines()).strip()
-            if txt:
-                tweets.append(txt)
+    norm: List[Dict[str, Any]] = []
+    for i, t in enumerate(tweets):
+        if not isinstance(t, dict):
+            raise ValueError(f"Tweet #{i} must be an object.")
+        text = str(t.get("text", "")).strip()
+        ttype = str(t.get("tweet_type", "")).strip()
+        if not text:
+            raise ValueError(f"Tweet #{i} missing text.")
+        if not ttype:
+            raise ValueError(f"Tweet #{i} missing tweet_type.")
+        norm.append({"tweet_type": ttype, "text": text})
 
-    tweets = tweets[:n_tweets]
-    if not tweets:
-        return None
+    if expected_count is not None and len(norm) != expected_count:
+        raise ValueError(f"Expected {expected_count} tweets, got {len(norm)}.")
 
-    return {
-        "tweets": [
-            {"text": t[:240], "language": "de", "tags": [], "intent": "other"}
-            for t in tweets
-        ]
-    }
+    return {"tweets": norm}
