@@ -9,6 +9,7 @@ class Settings:
     openai_api_key: str
     openai_model_name: str
     tweets_md_path: str
+    tweet_types_md_path: str
     out_dir: str
     n_tweets: int
 
@@ -22,6 +23,7 @@ def load_settings() -> Settings:
         openai_api_key=os.getenv("OPENAI_API_KEY", "ollama"),
         openai_model_name=os.getenv("OPENAI_MODEL_NAME", "ollama/llama3:latest"),
         tweets_md_path=os.getenv("TWEETS_MD_PATH", "content/tweets.md"),
+        tweet_types_md_path=os.getenv("TWEET_TYPES_MD_PATH", "content/tweet_types.md"),
         out_dir=os.getenv("OUT_DIR", "out"),
         n_tweets=int(os.getenv("N_TWEETS", "10")),
     )
