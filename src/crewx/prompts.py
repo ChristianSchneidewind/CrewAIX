@@ -1,125 +1,118 @@
 from __future__ import annotations
 
-from typing import Iterable, List
 from textwrap import dedent
+from typing import Iterable, Sequence
 
 from crewx.parsing import TweetType
 
 
-def _render_tweet_types(tweet_types: List[TweetType]) -> str:
-    # Compact list, model-friendly
-    lines = []
-    for tt in tweet_types:
-        # allow empty description
-        desc = (tt.description or "").strip()
-        if desc:
-            lines.append(f"- {tt.name}: {desc}")
-        else:
-            lines.append(f"- {tt.name}")
-    return "\n".join(lines)
+def _bullets(items: Iterable[str]) -> str:
+    return "\n".join(f"- {x}" for x in items if (x or "").strip())
 
 
-def tweet_task_prompt(*, md: str, tweet_types: List[TweetType], n_tweets: int) -> str:
-    types_block = _render_tweet_types(tweet_types)
-
-    return dedent(
-        f"""
-        You are a copywriter for a company. Generate exactly {n_tweets} tweets for X (Twitter) based ONLY on the provided markdown content.
-        The tweets must be varied, useful, and not repetitive.
-
-        Allowed tweet types (pick EXACTLY ONE per tweet from the list):
-        {types_block}
-
-        Rules:
-        - Output MUST be valid JSON only (no markdown fences, no commentary).
-        - JSON schema:
-          {{
-            "tweets": [
-              {{
-                "tweet_type": "<one of the allowed types>",
-                "text": "<tweet text>"
-              }}
-            ]
-          }}
-        - Exactly {n_tweets} items in "tweets".
-        - Keep each tweet under 280 characters.
-        - No duplicated ideas, hooks, or sentence structures.
-        - If you mention links, keep them generic (no tracking params).
-        - Write in German, tone: locker.
-
-        Markdown input:
-        ---
-        {md}
-        ---
-        """
-    ).strip()
-
-
-def repair_json_prompt(*, raw: str, n_tweets: int, tweet_types: List[TweetType]) -> str:
-    types_block = _render_tweet_types(tweet_types)
-
-    return dedent(
-        f"""
-        Fix the following output into VALID JSON ONLY.
-
-        Requirements:
-        - Output ONLY JSON (no markdown fences).
-        - Must match schema:
-          {{
-            "tweets": [
-              {{
-                "tweet_type": "<one of the allowed types>",
-                "text": "<tweet text>"
-              }}
-            ]
-          }}
-        - Exactly {n_tweets} tweets.
-        - tweet_type must be one of:
-        {types_block}
-
-        Raw output to fix:
-        ---
-        {raw}
-        ---
-        """
-    ).strip()
-
-
-def regen_missing_prompt(
-    *,
-    md: str,
-    tweet_types: List[TweetType],
-    n_missing: int,
-    existing_texts: Iterable[str],
+def tweet_task_prompt_for_type(
+    md_context: str,
+    tt: TweetType,
+    n_candidates: int,
+    history_texts: Sequence[str],
 ) -> str:
-    types_block = _render_tweet_types(tweet_types)
-    existing_block = "\n".join([f"- {t}" for t in existing_texts])
+    """
+    We intentionally ask the model to generate MORE tweets than needed,
+    so we can filter near-duplicates without extra regeneration calls.
+    """
+
+    # Keep history short to avoid giant prompts (and Ollama timeouts)
+    recent = list(history_texts)[-50:]
+    recent_block = "\n".join(f"- {t}" for t in recent) if recent else "(none)"
+
+    goal_block = tt.goal.strip() if tt.goal else "(no specific goal provided)"
+    style_block = _bullets(tt.style) if tt.style else "(no style rules)"
+    rules_block = _bullets(tt.rules) if tt.rules else "(no extra rules)"
 
     return dedent(
         f"""
-        Generate exactly {n_missing} ADDITIONAL tweets for X (Twitter).
-        Use ONLY the markdown input.
-        Avoid near-duplicates of the existing tweets.
+        You write German tweets for the company described below.
 
-        Allowed tweet types (pick EXACTLY ONE per tweet):
-        {types_block}
+        Output MUST be VALID JSON ONLY.
+        No markdown. No explanation.
 
-        Existing tweets (do NOT repeat or paraphrase these):
-        {existing_block}
+        COMPANY CONTEXT (Markdown):
+        ---
+        {md_context}
+        ---
 
-        Output MUST be valid JSON only:
+        ACTIVE TWEET TYPE: {tt.name}
+
+        TYPE GOAL:
+        {goal_block}
+
+        STYLE GUIDELINES:
+        {style_block}
+
+        CONTENT RULES:
+        {rules_block}
+
+        PROMPT DIVERSITY (VERY IMPORTANT):
+        - Every tweet must feel meaningfully different from the others (not just reworded).
+        - Use a DIFFERENT opening style for each tweet (rotate through these):
+          1) Question
+          2) “Myth vs Fact”
+          3) Micro-tip (imperative)
+          4) Short scenario (“Stell dir vor…”)
+          5) Checklist / steps (2–3 short items)
+          6) Common mistake + fix
+          7) Constraint/condition highlight (e.g., “bis zu …”, “wenn … dann …”)
+        - Do NOT reuse the same sentence template across tweets.
+          (Example of forbidden repetition: “Kostenloser X bei Y. Link.” in multiple tweets.)
+        - Avoid generic filler / ad-speak like:
+          "Unsere Experten", "Jetzt starten", "Wir sind für dich da", "Check unsere Website",
+          "Schnell und einfach", "Hol dir dein Geld", "Garantiert", "in wenigen Minuten"
+        - Across the batch, each of these phrases may appear MAX ONCE:
+          "Kostenloser Anspruchs-Check", "Keine Vorleistung", "keine Gebühren ohne Erfolg"
+        - Each tweet must include at least ONE concrete detail:
+          a condition, a tip, a typical scenario, a limit (“bis zu …”), or a clear misconception + correction.
+        - Tags: add 1–2 short tags that describe the angle (e.g. ["tip"], ["myth"], ["scenario"], ["checklist"]).
+
+        RECENT TWEETS (do NOT repeat, do NOT paraphrase too closely):
+        {recent_block}
+
+        HARD REQUIREMENTS (technical):
+        - Return EXACTLY {n_candidates} tweet objects in JSON.
+        - Each tweet object MUST include:
+          - "tweet_type": "{tt.name}"
+          - "text": string (max 240 chars)
+          - "language": "de"
+          - "tags": array of short strings (may be empty)
+        - No hashtag spam. Max 2 hashtags total if any.
+        - Avoid repeating the same sentence pattern.
+        - Each tweet must contain at least ONE concrete useful detail, tip, or condition.
+
+        OUTPUT JSON SCHEMA:
         {{
           "tweets": [
             {{
-              "tweet_type": "<one of the allowed types>",
-              "text": "<tweet text>"
+              "tweet_type": "{tt.name}",
+              "text": "...",
+              "language": "de",
+              "tags": []
             }}
           ]
         }}
-
-        Markdown input:
-        ---
-        {md}
-        ---
         """
     ).strip()
+
+
+def build_generation_prompt(
+    *,
+    company_md: str,
+    tweet_type,
+    recent_tweets: list[str],
+    n_tweets: int,
+) -> str:
+    return tweet_task_prompt_for_type(
+        md_context=company_md,
+        tt=tweet_type,
+        n_candidates=n_tweets,
+        history_texts=recent_tweets,
+    )
+

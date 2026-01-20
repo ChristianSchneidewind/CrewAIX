@@ -3,109 +3,138 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass(frozen=True)
 class TweetType:
     name: str
-    description: str
+    goal: str
+    style: list[str]
+    rules: list[str]
+
+    @property
+    def description(self) -> str:
+        # For compatibility with earlier prompts.py versions that used tt.description
+        style = "\n".join(f"- {s}" for s in self.style) if self.style else "- (none)"
+        rules = "\n".join(f"- {r}" for r in self.rules) if self.rules else "- (none)"
+        return f"TYPE GOAL:\n{self.goal}\n\nSTYLE GUIDELINES:\n{style}\n\nCONTENT RULES:\n{rules}"
 
 
-def load_tweet_types(path: str) -> List[TweetType]:
+def parse_tweet_types_md(md: str) -> list[TweetType]:
     """
-    Format in tweet_types.md (simple + tolerant):
-
-    # Tweet Types
-    ## marketing
-    - Description...
-    ## educational
-    - Description...
+    Parses your content/tweet_types.md structure:
+    - # Tweet Types
+    - ## marketing
+    - Goal: ...
+    - Style:
+      - ...
+    - Rules:
+      - ...
     """
-    with open(path, "r", encoding="utf-8") as f:
-        content = f.read()
-
-    # Split on headings level 2 "## "
-    parts = re.split(r"(?m)^##\s+", content)
-    if len(parts) <= 1:
+    # Split on "## <name>"
+    blocks = re.split(r"(?m)^\s*##\s+", md)
+    if not blocks:
         return []
 
-    tweet_types: List[TweetType] = []
-    for chunk in parts[1:]:
-        lines = chunk.strip().splitlines()
+    # First block is header before first type
+    types: list[TweetType] = []
+    for block in blocks[1:]:
+        lines = block.strip().splitlines()
         if not lines:
             continue
         name = lines[0].strip()
-        desc = "\n".join(lines[1:]).strip()
-        # remove leading bullets in description
-        desc = re.sub(r"(?m)^\s*[-*]\s+", "", desc).strip()
-        tweet_types.append(TweetType(name=name, description=desc))
+        rest = "\n".join(lines[1:]).strip()
 
-    return tweet_types
+        goal = ""
+        style: list[str] = []
+        rules: list[str] = []
+
+        # Goal: line
+        m_goal = re.search(r"(?mi)^\s*Goal:\s*(.+)\s*$", rest)
+        if m_goal:
+            goal = m_goal.group(1).strip()
+
+        # Style section bullets
+        m_style = re.search(r"(?ms)^\s*Style:\s*\n(.*?)(?:\n\s*Rules:\s*\n|\Z)", rest)
+        if m_style:
+            style_block = m_style.group(1)
+            style = [re.sub(r"^\s*-\s*", "", l).strip() for l in style_block.splitlines() if l.strip().startswith("-")]
+
+        # Rules section bullets
+        m_rules = re.search(r"(?ms)^\s*Rules:\s*\n(.*?)(?:\Z)", rest)
+        if m_rules:
+            rules_block = m_rules.group(1)
+            rules = [re.sub(r"^\s*-\s*", "", l).strip() for l in rules_block.splitlines() if l.strip().startswith("-")]
+
+        types.append(TweetType(name=name, goal=goal, style=style, rules=rules))
+
+    return types
 
 
-def _strip_code_fences(s: str) -> str:
-    s = s.strip()
-    # ```json ... ```
-    if s.startswith("```"):
-        s = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", s)
-        s = re.sub(r"\s*```$", "", s)
-    return s.strip()
-
-
-def _extract_first_json_value(text: str) -> Any:
+def _extract_first_json_object(raw: str) -> str | None:
     """
-    Robust-ish extraction: find first {...} block that parses as JSON.
+    Best-effort: find first {...} object even if model prints extra text.
     """
-    text = _strip_code_fences(text)
+    if not raw:
+        return None
+    # Quick path: raw is already JSON
+    raw_strip = raw.strip()
+    if raw_strip.startswith("{") and raw_strip.endswith("}"):
+        return raw_strip
 
-    # Quick path
+    # Search for balanced-ish JSON object by locating first '{' and last '}'.
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    candidate = raw[start : end + 1].strip()
+    return candidate
+
+
+def parse_tweets_response(raw: str, *, n_tweets: int) -> dict[str, Any]:
+    """
+    Returns: {"tweets": [ {tweet_type,text,language,tags}, ... ] }
+    Ensures at most n_tweets tweets, and normalizes fields.
+    Raises ValueError on failure.
+    """
+    json_str = _extract_first_json_object(raw)
+    if not json_str:
+        raise ValueError("No JSON object found in model output.")
+
     try:
-        return json.loads(text)
-    except Exception:
-        pass
-
-    # Greedy scan for object
-    start_indices = [m.start() for m in re.finditer(r"\{", text)]
-    for start in start_indices:
-        for end in range(len(text), start, -1):
-            if text[end - 1] != "}":
-                continue
-            candidate = text[start:end]
-            try:
-                return json.loads(candidate)
-            except Exception:
-                continue
-
-    raise ValueError("Could not parse JSON from output.")
-
-
-def parse_tweets_output(raw: str, expected_count: Optional[int] = None) -> Dict[str, Any]:
-    if raw is None or not str(raw).strip():
-        raise ValueError("Empty LLM output (raw is blank).")
-
-    data = _extract_first_json_value(raw)
-
-    if not isinstance(data, dict):
-        raise ValueError("Top-level JSON must be an object.")
+        data = json.loads(json_str)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in model output: {e}") from e
 
     tweets = data.get("tweets")
     if not isinstance(tweets, list):
         raise ValueError('JSON must contain key "tweets" as a list.')
 
-    norm: List[Dict[str, Any]] = []
-    for i, t in enumerate(tweets):
+    norm: list[dict[str, Any]] = []
+    for t in tweets:
         if not isinstance(t, dict):
-            raise ValueError(f"Tweet #{i} must be an object.")
-        text = str(t.get("text", "")).strip()
-        ttype = str(t.get("tweet_type", "")).strip()
-        if not text:
-            raise ValueError(f"Tweet #{i} missing text.")
-        if not ttype:
-            raise ValueError(f"Tweet #{i} missing tweet_type.")
-        norm.append({"tweet_type": ttype, "text": text})
+            continue
+        tweet_type = str(t.get("tweet_type") or "").strip()
+        text = str(t.get("text") or "").strip()
+        language = str(t.get("language") or "de").strip() or "de"
+        tags_raw = t.get("tags")
+        if isinstance(tags_raw, list):
+            tags_list = tags_raw
+        else:
+            tags_list = []
 
-    if expected_count is not None and len(norm) != expected_count:
-        raise ValueError(f"Expected {expected_count} tweets, got {len(norm)}.")
+        norm.append(
+        {
+            "tweet_type": tweet_type,
+            "text": text,
+            "language": language,
+            "tags": [str(x).strip() for x in tags_list if str(x).strip()],
+        }
+    )
 
-    return {"tweets": norm}
+
+    if not norm:
+        raise ValueError("Parsed JSON but no usable tweets were found.")
+
+    return {"tweets": norm[:n_tweets]}

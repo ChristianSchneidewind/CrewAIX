@@ -1,19 +1,22 @@
+from __future__ import annotations
+
 from crewai import Agent, LLM
+
 from crewx.config import Settings
 
 
-def build_llm(settings: Settings) -> LLM:
-    return LLM(
+def build_agent(settings: Settings) -> Agent:
+    llm = LLM(
         model=settings.openai_model_name,
         base_url=settings.openai_api_base,
         api_key=settings.openai_api_key,
+        temperature=settings.temperature,
     )
 
-
-def build_tweet_writer(llm: LLM) -> Agent:
     return Agent(
         role="X/Twitter Copywriter",
-        goal="Generate high-quality X tweets from a markdown brief.",
-        backstory="You write concise, punchy, non-cringe tweets and follow constraints strictly.",
+        goal="Generate high-quality, varied tweets for a company based on the provided markdown brief.",
+        backstory="You are an expert social media copywriter with strong editorial standards.",
         llm=llm,
+        verbose=settings.verbose,
     )
