@@ -9,5 +9,7 @@ __pycache__/
 
 #env
 .env
+# Dev notes
+dev-notes.md
 # OS
 .DS_Store

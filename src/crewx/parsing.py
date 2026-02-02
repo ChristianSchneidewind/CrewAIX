@@ -73,27 +73,60 @@ def parse_tweet_types_md(md: str) -> list[TweetType]:
 
 
 def _extract_first_json_object(raw: str) -> str | None:
-    """
-    Best-effort: find first {...} object even if model prints extra text.
+    """Best-effort: find first JSON object or array even if model prints extra text.
+
+    Strategy:
+    1) If the whole stripped string is valid JSON -> use it.
+    2) Otherwise, try to find the first valid JSON array "[...]".
+    3) If that fails, try to find the first valid JSON object "{...}".
     """
     if not raw:
         return None
-    # Quick path: raw is already JSON
-    raw_strip = raw.strip()
-    if raw_strip.startswith("{") and raw_strip.endswith("}"):
-        return raw_strip
 
-    # Search for balanced-ish JSON object by locating first '{' and last '}'.
-    start = raw.find("{")
-    end = raw.rfind("}")
-    if start == -1 or end == -1 or end <= start:
+    raw_strip = raw.strip()
+
+    # 1) Quick path: whole string is valid JSON (object or array)
+    if (raw_strip.startswith("{") and raw_strip.endswith("}")) or (
+        raw_strip.startswith("[") and raw_strip.endswith("]")
+    ):
+        try:
+            json.loads(raw_strip)
+            return raw_strip
+        except json.JSONDecodeError:
+            pass
+
+    # Helper to scan for first valid JSON by delimiter
+    def _scan_for_valid_segment(text: str, open_char: str, close_char: str) -> str | None:
+        start = text.find(open_char)
+        if start == -1:
+            return None
+        for end in range(len(text) - 1, start, -1):
+            if text[end] != close_char:
+                continue
+            candidate = text[start : end + 1].strip()
+            try:
+                json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            return candidate
         return None
-    candidate = raw[start : end + 1].strip()
-    return candidate
+
+    # 2) Prefer arrays if present
+    segment = _scan_for_valid_segment(raw, "[", "]")
+    if segment is not None:
+        return segment
+
+    # 3) Fallback: try objects
+    segment = _scan_for_valid_segment(raw, "{", "}")
+    if segment is not None:
+        return segment
+
+    return None
 
 
 def parse_tweets_response(raw: str, *, n_tweets: int) -> dict[str, Any]:
-    """
+    """Parse model output into a normalized tweets structure.
+
     Returns: {"tweets": [ {tweet_type,text,language,tags}, ... ] }
     Ensures at most n_tweets tweets, and normalizes fields.
     Raises ValueError on failure.
@@ -105,11 +138,18 @@ def parse_tweets_response(raw: str, *, n_tweets: int) -> dict[str, Any]:
     try:
         data = json.loads(json_str)
     except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON in model output: {e}") from e
+        # Give a slightly more helpful error including a snippet
+        snippet = json_str[:200].replace("\n", " ")
+        raise ValueError(f"Invalid JSON in model output: {e} | snippet: {snippet!r}") from e
 
-    tweets = data.get("tweets")
+    # Accept either a plain list of tweets OR an object with "tweets" key
+    if isinstance(data, list):
+        tweets = data
+    else:
+        tweets = data.get("tweets")
+
     if not isinstance(tweets, list):
-        raise ValueError('JSON must contain key "tweets" as a list.')
+        raise ValueError('JSON must be a list or contain key "tweets" as a list.')
 
     norm: list[dict[str, Any]] = []
     for t in tweets:
@@ -125,14 +165,13 @@ def parse_tweets_response(raw: str, *, n_tweets: int) -> dict[str, Any]:
             tags_list = []
 
         norm.append(
-        {
-            "tweet_type": tweet_type,
-            "text": text,
-            "language": language,
-            "tags": [str(x).strip() for x in tags_list if str(x).strip()],
-        }
-    )
-
+            {
+                "tweet_type": tweet_type,
+                "text": text,
+                "language": language,
+                "tags": [str(x).strip() for x in tags_list if str(x).strip()],
+            }
+        )
 
     if not norm:
         raise ValueError("Parsed JSON but no usable tweets were found.")
