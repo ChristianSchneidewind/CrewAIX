@@ -46,16 +46,30 @@ KEYWORD_QUOTAS = {
         "max_per_batch": 1,
     },
     "eu261": {
-        "needles": ["eu-verordnung 261/2004", "eu261", "eu-261"],
+        "needles": ["eu-verordnung 261/2004", "verordnung 261/2004", "eu261", "eu-261"],
         "max_per_batch": 1,
     },
 }
 
 KEYWORD_HISTORY_LIMITS = {
-    "gate_changes": 1,
+    "gate_changes": 0,
     "connections": 1,
     "eu261": 0,
 }
+
+TIP_LANGUAGE = [
+    "tipp",
+    "empfiehlt",
+    "hilft",
+    "vermeiden",
+    "behalten sie",
+    "prüfen sie",
+    "planen sie",
+    "sollten",
+    "anspruchs-check",
+    "anspruchscheck",
+    "lohnt sich",
+]
 
 MAX_TYPES_PER_BATCH = {
     "travel_hack": 1,
@@ -82,6 +96,8 @@ FORBIDDEN_CLAIM_PHRASES = [
     "überbuchungen sind",
     "überbuchung ist üblich",
     "überbuchungen sind üblich",
+    "außergewöhnlich",
+    "außergewöhnliche umstände",
 ]
 
 
@@ -117,7 +133,7 @@ def _violates_hard_rules(text: str) -> bool:
     if "drei stunden" in lower_text:
         return True
 
-    if "eu-verordnung 261/2004" in lower_text or "eu261" in lower_text or "eu-261" in lower_text:
+    if "eu-verordnung 261/2004" in lower_text or "verordnung 261/2004" in lower_text or "eu261" in lower_text or "eu-261" in lower_text:
         return True
 
     return False
@@ -152,6 +168,7 @@ def _filter_crewai_tweets(
     type_counts: dict[str, int] = {}
     doc_tip_in_recent = any(_is_doc_tip(t) for t in recent_texts)
     recent_scope = recent_texts[:50] if recent_texts else []
+    doc_tip_recent_hits = _count_keyword_hits(recent_scope, DOCUMENT_PATTERNS)
 
     for t in tweets:
         text = (t.get("text") or "").strip()
@@ -161,6 +178,11 @@ def _filter_crewai_tweets(
         tweet_type = (t.get("tweet_type") or "").strip().lower()
         if allowed_types and tweet_type not in allowed_types:
             continue
+
+        if tweet_type == "industry_insight":
+            lower_text = text.lower()
+            if any(p in lower_text for p in TIP_LANGUAGE):
+                continue
 
         type_counts.setdefault(tweet_type, 0)
 
@@ -173,8 +195,10 @@ def _filter_crewai_tweets(
             if type_counts[tweet_type] >= max_travel_hack:
                 continue
 
-        if _is_doc_tip(text) and (doc_tip_in_recent or any(_is_doc_tip(u.get("text", "")) for u in filtered)):
-            continue
+        if _is_doc_tip(text):
+            doc_tip_batch_hits = _count_keyword_hits([u.get("text", "") for u in filtered], DOCUMENT_PATTERNS)
+            if doc_tip_batch_hits >= 1 or doc_tip_recent_hits >= 1:
+                continue
 
         if _violates_hard_rules(text):
             continue
@@ -237,25 +261,22 @@ def _load_roles(path: str) -> dict[str, dict[str, str]]:
     return _parse_roles_md(p.read_text(encoding="utf-8"))
 
 
-def _load_last_tweet_type(out_dir: str) -> str | None:
+def _rotation_start_index(out_dir: str, *, total_types: int) -> int:
+    """Deterministic rotation based on history length.
+
+    Uses number of non-empty history lines to pick the next start index.
+    """
+    if total_types <= 0:
+        return 0
     history_path = Path(out_dir) / "history.jsonl"
     if not history_path.exists():
-        return None
+        return 0
     try:
         lines = history_path.read_text(encoding="utf-8").splitlines()
     except Exception:
-        return None
-    for line in reversed(lines):
-        if not line.strip():
-            continue
-        try:
-            data = json.loads(line)
-        except Exception:
-            continue
-        t = (data.get("tweet_type") or "").strip()
-        if t and t.lower() != "unknown":
-            return t
-    return None
+        return 0
+    non_empty = sum(1 for line in lines if line.strip())
+    return non_empty % total_types
 
 
 def fix_history_unknown_types(out_dir: str, fallback_type: str = "educational") -> int:
@@ -394,14 +415,9 @@ def run_generate_tweets_crewai() -> None:
     if forced_types:
         active_types = [t for t in all_types if t.name.strip().lower() in set(forced_types)]
     else:
-        # Default: rotate through types to avoid clustering when N_TWEETS is small.
+        # Deterministic rotation based on history length (stable across runs).
         max_types = min(settings.n_tweets, len(all_types))
-        last_type = (_load_last_tweet_type(settings.out_dir) or "").strip().lower()
-        if last_type and any(t.name.strip().lower() == last_type for t in all_types):
-            start_idx = next(i for i, t in enumerate(all_types) if t.name.strip().lower() == last_type)
-            start_idx = (start_idx + 1) % len(all_types)
-        else:
-            start_idx = 0
+        start_idx = _rotation_start_index(settings.out_dir, total_types=len(all_types))
         active_types = [all_types[(start_idx + i) % len(all_types)] for i in range(max_types)]
         forced_types = [t.name.strip().lower() for t in active_types]
 
