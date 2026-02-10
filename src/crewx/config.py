@@ -25,6 +25,13 @@ class Settings:
     # Dedup scope (for prompt “recent tweets”)
     recent_tweets_max: int = 50
 
+    # Embedding-based dedup (optional)
+    embedding_model_name: str | None = None
+    embedding_api_base: str | None = None
+    embedding_api_key: str | None = None
+    embedding_similarity_threshold: float = 0.88
+    embedding_history_max: int = 30
+
     # Optional: force specific tweet types per run
     forced_tweet_types: tuple[str, ...] = field(default_factory=tuple)
 
@@ -50,6 +57,12 @@ def load_settings() -> Settings:
     forced_types_raw = _get_env("FORCE_TWEET_TYPES", "") or ""
     forced_tweet_types = tuple([t.strip() for t in forced_types_raw.split(",") if t.strip()])
 
+    embedding_model_name = _get_env("EMBEDDING_MODEL_NAME", "text-embedding-3-small")
+    embedding_api_base = _get_env("EMBEDDING_API_BASE", "https://api.openai.com/v1")
+    embedding_api_key = _get_env("EMBEDDING_API_KEY", None)
+    embedding_similarity_threshold = float(_get_env("EMBEDDING_SIMILARITY_THRESHOLD", "0.88") or "0.88")
+    embedding_history_max = int(_get_env("EMBEDDING_HISTORY_MAX", "30") or "30")
+
     # Optional knobs
     n_tweets = int(_get_env("N_TWEETS", "10") or "10")
     recent_tweets_max = int(_get_env("RECENT_TWEETS_MAX", "50") or "50")
@@ -69,6 +82,11 @@ def load_settings() -> Settings:
         out_dir=out_dir,
         n_tweets=n_tweets,
         recent_tweets_max=recent_tweets_max,
+        embedding_model_name=embedding_model_name,
+        embedding_api_base=embedding_api_base,
+        embedding_api_key=embedding_api_key,
+        embedding_similarity_threshold=embedding_similarity_threshold,
+        embedding_history_max=embedding_history_max,
         forced_tweet_types=forced_tweet_types,
     )
 

@@ -4,6 +4,10 @@ from textwrap import dedent
 from pathlib import Path
 import re
 import json
+import math
+from typing import Iterable
+
+from litellm import embedding as litellm_embedding
 
 from crewai import Agent, Crew, Process, Task
 
@@ -137,6 +141,73 @@ def _count_keyword_hits(texts: list[str], needles: list[str]) -> int:
     return hits
 
 
+def _cosine_similarity(a: Iterable[float], b: Iterable[float]) -> float:
+    a_list = list(a)
+    b_list = list(b)
+    if not a_list or not b_list or len(a_list) != len(b_list):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a_list, b_list))
+    norm_a = math.sqrt(sum(x * x for x in a_list))
+    norm_b = math.sqrt(sum(y * y for y in b_list))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+def _embed_texts(texts: list[str], settings) -> list[list[float]]:
+    if not texts or not settings.embedding_model_name:
+        raise ValueError("Embedding disabled or empty input")
+    response = litellm_embedding(
+        model=settings.embedding_model_name,
+        input=texts,
+        api_key=settings.embedding_api_key or settings.openai_api_key,
+        base_url=settings.embedding_api_base or settings.openai_api_base,
+    )
+
+    if isinstance(response, dict) and response.get("error"):
+        raise ValueError(f"Embedding error: {response.get('error')}")
+
+    data = None
+    if isinstance(response, dict) and isinstance(response.get("data"), list):
+        data = response.get("data")
+    elif isinstance(response, list):
+        data = response
+    elif isinstance(response, dict) and isinstance(response.get("embedding"), list):
+        return [response.get("embedding")]
+    else:
+        response_data = getattr(response, "data", None)
+        if isinstance(response_data, list):
+            data = response_data
+        elif hasattr(response, "model_dump"):
+            dumped = response.model_dump()
+            if isinstance(dumped, dict) and isinstance(dumped.get("data"), list):
+                data = dumped.get("data")
+
+    if not data:
+        keys = list(response.keys()) if isinstance(response, dict) else type(response).__name__
+        raise ValueError(f"No embedding data returned (response={keys})")
+
+    embeddings: list[list[float]] = []
+    for item in data:
+        emb = item.get("embedding") if isinstance(item, dict) else None
+        if isinstance(emb, list):
+            embeddings.append(emb)
+    if not embeddings:
+        raise ValueError("No embeddings parsed")
+    return embeddings
+
+
+def _build_embedding_map(texts: list[str], settings) -> dict[str, list[float]]:
+    embeddings = _embed_texts(texts, settings)
+    mapping: dict[str, list[float]] = {}
+    for text, emb in zip(texts, embeddings):
+        if text and text not in mapping:
+            mapping[text] = emb
+    if not mapping:
+        raise ValueError("Empty embedding map")
+    return mapping
+
+
 def _violates_hard_rules(text: str, *, strict: bool = True) -> bool:
     lower_text = (text or "").lower()
 
@@ -206,9 +277,13 @@ def _filter_crewai_tweets(
     max_travel_hack: int,
     allowed_types: set[str] | None = None,
     type_limits: dict[str, int] | None = None,
+    embedding_threshold: float | None = None,
+    recent_embeddings: list[list[float]] | None = None,
+    candidate_embeddings: dict[str, list[float]] | None = None,
 ) -> list[dict]:
     filtered: list[dict] = []
     type_counts: dict[str, int] = {}
+    accepted_embeddings: list[list[float]] = []
     doc_tip_in_recent = any(_is_doc_tip(t) for t in recent_texts)
     recent_scope = recent_texts[:50] if recent_texts else []
     doc_tip_recent_hits = _count_keyword_hits(recent_scope, DOCUMENT_PATTERNS)
@@ -272,6 +347,14 @@ def _filter_crewai_tweets(
                     break
         if keyword_blocked:
             continue
+
+        if embedding_threshold and candidate_embeddings:
+            candidate_embedding = candidate_embeddings.get(text)
+            if candidate_embedding:
+                pool = (recent_embeddings or []) + accepted_embeddings
+                if any(_cosine_similarity(candidate_embedding, emb) >= embedding_threshold for emb in pool):
+                    continue
+                accepted_embeddings.append(candidate_embedding)
 
         filtered.append(t)
         type_counts[tweet_type] += 1
@@ -623,12 +706,40 @@ def run_generate_tweets_crewai() -> None:
         max_travel_hack = max(1, effective_n_tweets // 5)
         allowed_types = {t.name.strip().lower() for t in active_types}
         type_limits = {t.name.strip().lower(): 1 for t in active_types} if forced_types else None
+
+        embedding_threshold = (
+            settings.embedding_similarity_threshold
+            if settings.embedding_model_name and (settings.embedding_api_key or settings.openai_api_key)
+            else None
+        )
+        recent_for_embeddings = recent[: settings.embedding_history_max]
+        recent_embeddings = None
+        candidate_embeddings = None
+        candidate_texts = [(t.get("text") or "").strip() for t in data["tweets"] if (t.get("text") or "").strip()]
+        embedding_error = None
+        if embedding_threshold:
+            try:
+                recent_embeddings = _embed_texts(recent_for_embeddings, settings)
+                candidate_embeddings = _build_embedding_map(candidate_texts, settings)
+            except Exception as exc:
+                embedding_error = str(exc)
+
+            write_text(
+                last_raw_path,
+                f"EMBEDDING DEBUG\nrecent={len(recent_for_embeddings)} emb_recent={'yes' if recent_embeddings else 'no'}\n"
+                f"candidates={len(candidate_texts)} emb_candidates={'yes' if candidate_embeddings else 'no'}\n"
+                f"error={embedding_error}\n\n" + raw_str,
+            )
+
         tweets = _filter_crewai_tweets(
             data["tweets"],
             recent,
             max_travel_hack=max_travel_hack,
             allowed_types=allowed_types,
             type_limits=type_limits,
+            embedding_threshold=embedding_threshold,
+            recent_embeddings=recent_embeddings,
+            candidate_embeddings=candidate_embeddings,
         )
         if not tweets:
             fallback = []
