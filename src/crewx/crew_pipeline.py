@@ -23,10 +23,17 @@ from crewx.parsing import parse_tweet_types_md, parse_tweets_response
 DOCUMENT_PATTERNS = [
     "boardingpass",
     "buchungsbestätigung",
+    "buchungsdetails",
     "airline-nachricht",
     "airline-nachrichten",
+    "nachrichten der airline",
     "flugunterlagen",
     "reisedokumente",
+    "e-mail",
+    "e-mails",
+    "email",
+    "e mail",
+    "sms",
 ]
 
 KEYWORD_QUOTAS = {
@@ -35,15 +42,47 @@ KEYWORD_QUOTAS = {
         "max_per_batch": 1,
     },
     "connections": {
-        "needles": ["umsteig", "anschlussflug", "zubringer", "puffer"],
+        "needles": ["umsteig", "umsteigezeit", "umsteigezeiten", "anschlussflug", "zubringer", "puffer"],
         "max_per_batch": 1,
     },
+    "eu261": {
+        "needles": ["eu-verordnung 261/2004", "eu261", "eu-261"],
+        "max_per_batch": 1,
+    },
+}
+
+KEYWORD_HISTORY_LIMITS = {
+    "gate_changes": 1,
+    "connections": 1,
+    "eu261": 0,
 }
 
 MAX_TYPES_PER_BATCH = {
     "travel_hack": 1,
     "passenger_rights_quick": 1,
 }
+
+FORBIDDEN_CLAIM_PHRASES = [
+    "abflugort in der eu",
+    "in der eu startet",
+    "in der eu startet oder landet",
+    "startet oder landet",
+    "start oder landung in der eu",
+    "start oder landung",
+    "abflug oder ankunft in österreich",
+    "abflug oder ankunft",
+    "ab start",
+    "ab landung",
+    "ab start oder landung",
+    "eu-airline",
+    "eu airline",
+    "eu-airlines",
+    "eu airlines",
+    "österreich",
+    "überbuchungen sind",
+    "überbuchung ist üblich",
+    "überbuchungen sind üblich",
+]
 
 
 def _is_doc_tip(text: str) -> bool:
@@ -58,6 +97,30 @@ def _count_keyword_hits(texts: list[str], needles: list[str]) -> int:
         if any(n in lower for n in needles):
             hits += 1
     return hits
+
+
+def _violates_hard_rules(text: str) -> bool:
+    lower_text = (text or "").lower()
+
+    if any(p in lower_text for p in FORBIDDEN_CLAIM_PHRASES):
+        return True
+
+    if "3 stunden" in lower_text or "3h" in lower_text:
+        return True
+
+    if "3\u00a0stunden" in lower_text:
+        return True
+
+    if "mehr als 3" in lower_text or "über 3" in lower_text or "ab 3" in lower_text:
+        return True
+
+    if "drei stunden" in lower_text:
+        return True
+
+    if "eu-verordnung 261/2004" in lower_text or "eu261" in lower_text or "eu-261" in lower_text:
+        return True
+
+    return False
 
 
 def _assign_missing_types(tweets: list[dict], required_types: list[str]) -> list[dict]:
@@ -88,7 +151,7 @@ def _filter_crewai_tweets(
     filtered: list[dict] = []
     type_counts: dict[str, int] = {}
     doc_tip_in_recent = any(_is_doc_tip(t) for t in recent_texts)
-    recent_scope = recent_texts[:15] if recent_texts else []
+    recent_scope = recent_texts[:50] if recent_texts else []
 
     for t in tweets:
         text = (t.get("text") or "").strip()
@@ -113,14 +176,24 @@ def _filter_crewai_tweets(
         if _is_doc_tip(text) and (doc_tip_in_recent or any(_is_doc_tip(u.get("text", "")) for u in filtered)):
             continue
 
+        if _violates_hard_rules(text):
+            continue
+
         keyword_blocked = False
-        for quota in KEYWORD_QUOTAS.values():
+        for key, quota in KEYWORD_QUOTAS.items():
             needles = quota["needles"]
             max_per_batch = quota["max_per_batch"]
             if any(n in text.lower() for n in needles):
                 batch_hits = _count_keyword_hits([u.get("text", "") for u in filtered], needles)
                 recent_hits = _count_keyword_hits(recent_scope, needles)
-                if batch_hits >= max_per_batch or recent_hits >= max_per_batch:
+                history_limit = KEYWORD_HISTORY_LIMITS.get(key)
+                if batch_hits >= max_per_batch:
+                    keyword_blocked = True
+                    break
+                if history_limit is not None and recent_hits >= history_limit:
+                    keyword_blocked = True
+                    break
+                if history_limit is None and recent_hits >= max_per_batch:
                     keyword_blocked = True
                     break
         if keyword_blocked:
@@ -275,6 +348,9 @@ def _build_review_prompt(*, n_tweets: int) -> str:
         - No "Mythos/Fakt/Irrtum/Falsch" openings
         - No "Checkliste/Schritte" wording
         - No legal advice or guarantees
+        - HARD BAN: 3-hour thresholds ("3 Stunden", "über 3", "ab 3", "3h")
+        - HARD BAN: EU start/landing claims ("ab Start/Landung in der EU", "EU-Airlines")
+        - Avoid repeated EU-261 mentions across the batch
 
         If a tweet violates the rules, rewrite it to comply while keeping the meaning.
         If it cannot be fixed, remove it.
@@ -419,7 +495,16 @@ def run_generate_tweets_crewai() -> None:
         type_limits=type_limits,
     )
     if not tweets:
-        tweets = data["tweets"][:1]
+        fallback = []
+        for t in data["tweets"]:
+            text = (t.get("text") or "").strip()
+            if not text:
+                continue
+            if _violates_hard_rules(text):
+                continue
+            fallback = [t]
+            break
+        tweets = fallback
 
     timestamp = now_timestamp()
     out_queue_path = f"{settings.out_dir}/post_queue_{timestamp}.json"

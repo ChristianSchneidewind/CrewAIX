@@ -132,10 +132,11 @@ Style:
 - Short
 
 Angles:
-- 1‑Satz‑Hinweis zu EU‑261 ohne Zahlen‑Overload
+- 1‑Satz‑Hinweis zu Rechten ohne Zahlen‑Overload
 - Anspruch prüfen lassen (ohne Druck)
 
 Rules:
+- Do NOT mention EU‑261 explicitly
 - Avoid "bis zu 600 €" unless truly necessary
 - No legal advice
 - Max 240 characters
