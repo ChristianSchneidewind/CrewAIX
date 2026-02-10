@@ -46,16 +46,30 @@ KEYWORD_QUOTAS = {
         "max_per_batch": 1,
     },
     "eu261": {
-        "needles": ["eu-verordnung 261/2004", "eu261", "eu-261"],
+        "needles": ["eu-verordnung 261/2004", "verordnung 261/2004", "eu261", "eu-261"],
         "max_per_batch": 1,
     },
 }
 
 KEYWORD_HISTORY_LIMITS = {
-    "gate_changes": 1,
+    "gate_changes": 0,
     "connections": 1,
     "eu261": 0,
 }
+
+TIP_LANGUAGE = [
+    "tipp",
+    "empfiehlt",
+    "hilft",
+    "vermeiden",
+    "behalten sie",
+    "prüfen sie",
+    "planen sie",
+    "sollten",
+    "anspruchs-check",
+    "anspruchscheck",
+    "lohnt sich",
+]
 
 MAX_TYPES_PER_BATCH = {
     "travel_hack": 1,
@@ -82,6 +96,8 @@ FORBIDDEN_CLAIM_PHRASES = [
     "überbuchungen sind",
     "überbuchung ist üblich",
     "überbuchungen sind üblich",
+    "außergewöhnlich",
+    "außergewöhnliche umstände",
 ]
 
 
@@ -117,7 +133,7 @@ def _violates_hard_rules(text: str) -> bool:
     if "drei stunden" in lower_text:
         return True
 
-    if "eu-verordnung 261/2004" in lower_text or "eu261" in lower_text or "eu-261" in lower_text:
+    if "eu-verordnung 261/2004" in lower_text or "verordnung 261/2004" in lower_text or "eu261" in lower_text or "eu-261" in lower_text:
         return True
 
     return False
@@ -152,6 +168,7 @@ def _filter_crewai_tweets(
     type_counts: dict[str, int] = {}
     doc_tip_in_recent = any(_is_doc_tip(t) for t in recent_texts)
     recent_scope = recent_texts[:50] if recent_texts else []
+    doc_tip_recent_hits = _count_keyword_hits(recent_scope, DOCUMENT_PATTERNS)
 
     for t in tweets:
         text = (t.get("text") or "").strip()
@@ -161,6 +178,11 @@ def _filter_crewai_tweets(
         tweet_type = (t.get("tweet_type") or "").strip().lower()
         if allowed_types and tweet_type not in allowed_types:
             continue
+
+        if tweet_type == "industry_insight":
+            lower_text = text.lower()
+            if any(p in lower_text for p in TIP_LANGUAGE):
+                continue
 
         type_counts.setdefault(tweet_type, 0)
 
@@ -173,8 +195,10 @@ def _filter_crewai_tweets(
             if type_counts[tweet_type] >= max_travel_hack:
                 continue
 
-        if _is_doc_tip(text) and (doc_tip_in_recent or any(_is_doc_tip(u.get("text", "")) for u in filtered)):
-            continue
+        if _is_doc_tip(text):
+            doc_tip_batch_hits = _count_keyword_hits([u.get("text", "") for u in filtered], DOCUMENT_PATTERNS)
+            if doc_tip_batch_hits >= 1 or doc_tip_recent_hits >= 1:
+                continue
 
         if _violates_hard_rules(text):
             continue
