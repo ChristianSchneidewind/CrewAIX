@@ -237,25 +237,22 @@ def _load_roles(path: str) -> dict[str, dict[str, str]]:
     return _parse_roles_md(p.read_text(encoding="utf-8"))
 
 
-def _load_last_tweet_type(out_dir: str) -> str | None:
+def _rotation_start_index(out_dir: str, *, total_types: int) -> int:
+    """Deterministic rotation based on history length.
+
+    Uses number of non-empty history lines to pick the next start index.
+    """
+    if total_types <= 0:
+        return 0
     history_path = Path(out_dir) / "history.jsonl"
     if not history_path.exists():
-        return None
+        return 0
     try:
         lines = history_path.read_text(encoding="utf-8").splitlines()
     except Exception:
-        return None
-    for line in reversed(lines):
-        if not line.strip():
-            continue
-        try:
-            data = json.loads(line)
-        except Exception:
-            continue
-        t = (data.get("tweet_type") or "").strip()
-        if t and t.lower() != "unknown":
-            return t
-    return None
+        return 0
+    non_empty = sum(1 for line in lines if line.strip())
+    return non_empty % total_types
 
 
 def fix_history_unknown_types(out_dir: str, fallback_type: str = "educational") -> int:
@@ -394,14 +391,9 @@ def run_generate_tweets_crewai() -> None:
     if forced_types:
         active_types = [t for t in all_types if t.name.strip().lower() in set(forced_types)]
     else:
-        # Default: rotate through types to avoid clustering when N_TWEETS is small.
+        # Deterministic rotation based on history length (stable across runs).
         max_types = min(settings.n_tweets, len(all_types))
-        last_type = (_load_last_tweet_type(settings.out_dir) or "").strip().lower()
-        if last_type and any(t.name.strip().lower() == last_type for t in all_types):
-            start_idx = next(i for i, t in enumerate(all_types) if t.name.strip().lower() == last_type)
-            start_idx = (start_idx + 1) % len(all_types)
-        else:
-            start_idx = 0
+        start_idx = _rotation_start_index(settings.out_dir, total_types=len(all_types))
         active_types = [all_types[(start_idx + i) % len(all_types)] for i in range(max_types)]
         forced_types = [t.name.strip().lower() for t in active_types]
 
