@@ -124,6 +124,20 @@ def _extract_first_json_object(raw: str) -> str | None:
     return None
 
 
+def _normalize_tag(tag: str) -> str:
+    t = tag.strip().lower()
+    if t.startswith("#"):
+        t = t[1:]
+    mapping = {
+        "myth": "myth_vs_fact",
+        "mythos": "myth_vs_fact",
+        "myth_vs_fact": "myth_vs_fact",
+        "fact": "myth_vs_fact",
+        "fakt": "myth_vs_fact",
+    }
+    return mapping.get(t, t)
+
+
 def parse_tweets_response(raw: str, *, n_tweets: int) -> dict[str, Any]:
     """Parse model output into a normalized tweets structure.
 
@@ -153,6 +167,20 @@ def parse_tweets_response(raw: str, *, n_tweets: int) -> dict[str, Any]:
 
     norm: list[dict[str, Any]] = []
     for t in tweets:
+        if isinstance(t, str):
+            text = t.strip()
+            if not text:
+                continue
+            norm.append(
+                {
+                    "tweet_type": "unknown",
+                    "text": text,
+                    "language": "de",
+                    "tags": [],
+                }
+            )
+            continue
+
         if not isinstance(t, dict):
             continue
         tweet_type = str(t.get("tweet_type") or "").strip()
@@ -164,12 +192,15 @@ def parse_tweets_response(raw: str, *, n_tweets: int) -> dict[str, Any]:
         else:
             tags_list = []
 
+        tags_norm = [_normalize_tag(str(x)) for x in tags_list if str(x).strip()]
+        tags_norm = [t for t in tags_norm if t]
+
         norm.append(
             {
                 "tweet_type": tweet_type,
                 "text": text,
                 "language": language,
-                "tags": [str(x).strip() for x in tags_list if str(x).strip()],
+                "tags": tags_norm,
             }
         )
 

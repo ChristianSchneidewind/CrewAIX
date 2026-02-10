@@ -1,4 +1,5 @@
-from crewx.pipeline import run_generate_tweets
+from crewx.crew_pipeline import run_generate_tweets_crewai
+
 
 if __name__ == "__main__":
-    run_generate_tweets()
+    run_generate_tweets_crewai()

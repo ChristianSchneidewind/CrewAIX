@@ -16,7 +16,7 @@ Mission: Passagieren helfen, Flugentschädigungen nach EU-Verordnung 261/2004 du
 ## Target Audience
 Primary:
 - Flugreisende mit Verspätungen, Annullierungen oder Überbuchungen
-- Passagiere ab EU-Abflughäfen
+- Passagiere mit Abflug oder Ankunft in Österreich (nur erwähnen, wenn es für den Tweet relevant ist)
 Secondary:
 - Vielflieger, Geschäftsreisende, Familienurlauber
 
@@ -43,6 +43,26 @@ Secondary:
 - Erklärungen zu EU-261-Ansprüchen
 - Erfolgsgeschichten / typische Verspätungsszenarien
 - Häufige Irrtümer bei Flugentschädigungen
+
+## Scenario / Angle Ideas (use as inspiration, not claims)
+- Anschlussflug verpasst, weil der Zubringer verspätet oder annulliert wurde
+- Rückflug nach Österreich nach dem Urlaub wurde kurzfristig gestrichen
+- Geschäftsreise: Meeting verpasst wegen verspätetem Flug
+- Familie mit Kindern am Flughafen, Flug ausfällt
+- Überbuchung am Gate / Check-in, Boarding verweigert
+- Umbuchung auf späteren Flug am selben Tag
+- Kurzfristige Information über Annullierung am Flughafen
+- Fun-Facts rund ums Fliegen (als Aufhänger für einen Tipp oder Hinweis)
+
+## Practical, non-legal tips (allowed)
+- Unterlagen bereithalten: Buchungsbestätigung, Boardingpass, Airline-Nachrichten
+- Airline-Kommunikation (E-Mail/SMS) aufbewahren
+- Anspruch prüfen lassen, bevor man auf eigene Kosten handelt
+- Gate-Änderungen aktiv prüfen (App/Anzeigen) statt nur auf Durchsagen warten
+- Bei der Buchung bewusst längere Umsteigezeiten wählen, besonders bei großen Airports
+- Handgepäck so packen, dass wichtige Dinge schnell greifbar sind
+- Vor Abflug Sitzplatz/Boarding-Gruppe checken, um Stress am Gate zu reduzieren
+- Bei langen Flügen: Wasser trinken und Pausen einplanen (ohne Gesundheitsversprechen)
 
 ## Constraints
 - Tweets to generate: 10

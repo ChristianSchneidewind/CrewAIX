@@ -22,8 +22,8 @@ def tweet_task_prompt_for_type(
     can follow the most important diversity rules.
     """
 
-    # Keep history short to avoid giant prompts (and Ollama timeouts)
-    recent = list(history_texts)[-30:]
+    # Keep history short to avoid giant prompts (and slow cloud responses)
+    recent = list(history_texts)[-3:]
     recent_block = "\n".join(f"- {t}" for t in recent) if recent else "(none)"
 
     goal_block = tt.goal.strip() if tt.goal else "(no specific goal provided)"
@@ -34,7 +34,8 @@ def tweet_task_prompt_for_type(
         f"""
         You write German tweets for the company described below.
 
-        Output MUST be VALID JSON ONLY.
+        Output MUST be in CrewAI final answer format.
+        Start with "Final Answer:" followed by a JSON array only.
         No markdown. No explanation.
 
         COMPANY CONTEXT (Markdown):
@@ -65,6 +66,24 @@ def tweet_task_prompt_for_type(
         - Avoid repeating the same brand-slogan or call-to-action in multiple tweets.
           For example, these phrases may appear AT MOST ONCE per batch:
           "FlugNinja hilft Ihnen", "Mehr erfahren: https://www.flugninja.at/", "#FlugNinja".
+        - Do NOT mention "EU-Abflughafen" or "EU-Abflughäfen".
+        - Do NOT invent time thresholds like "ab 3 Stunden" (not in the brief).
+        - Only mention "Österreich" or "ab/nach Österreich" when it is truly relevant to the tweet.
+        - Across the batch, avoid repeating the same key fact or phrase (e.g., "bis zu 600 €",
+          "kostenloser Anspruchs-Check", "ohne Vorleistung", "nur bei Erfolg"), unless you have no other option.
+        - Do NOT reuse the same advice. In particular, avoid repeating documentation tips like
+          "Flugnummer notieren", "geplante Ankunftszeit", "Verspätungsgrund dokumentieren",
+          "Boardingpass/Buchungsbestätigung aufbewahren", or "Airline-Nachrichten sichern".
+        - HARD BAN openings like "Wussten Sie", "Wissen Sie", "Haben Sie gewusst", "Wusstest du".
+          HARD BAN "Checkliste"/"Schritte" formats.
+          HARD BAN openings like "Tipp:", "Fehler:", "Mythos:", "Fakt:", "Irrtum:", "Falsch".
+          Vary the openings.
+        - Across the batch, mention "EU-261" or "EU-Verordnung 261/2004" at most ONCE.
+          Mention "bis zu 600 €" at most ONCE.
+        - Avoid focusing on Annullierung repeatedly; mix in Verspätung and Überbuchung too.
+        - Ensure topic variety across the batch: mix scenarios (Verspätung, Annullierung, Überbuchung),
+          process/steps, myths vs facts, and practical traveler tips.
+        - Mention Anschlussflug/Zubringer nur höchstens EINMAL pro Batch.
         - Each tweet must include at least ONE concrete detail:
           a condition, a tip, a typical scenario, a limit ("bis zu …"),
           or a misconception + correction.
@@ -96,8 +115,9 @@ def tweet_task_prompt_for_type(
         - No hashtag spam. Max 2 hashtags total if any.
         - Each tweet must contain at least ONE concrete useful detail, tip, or condition.
 
-        IF YOU CANNOT FOLLOW THESE RULES, OUTPUT AN EMPTY JSON ARRAY: [].
-        DO NOT WRITE ANY OTHER TEXT OUTSIDE OF JSON.
+        IF YOU CANNOT FOLLOW THESE RULES, OUTPUT:
+        Final Answer: []
+        DO NOT WRITE ANY OTHER TEXT OUTSIDE OF "Final Answer:" + JSON.
         """
     ).strip()
 
