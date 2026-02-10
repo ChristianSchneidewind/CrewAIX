@@ -71,6 +71,10 @@ Secondary:
 - Max 2 Hashtags per tweet
 - Include link to https://www.flugninja.at/ at least 3×
 - Use facts only from this brief
+- Avoid specific thresholds (e.g., "3 Stunden")
+- Avoid EU‑261 wording in the tweet text (use neutral rights language)
+- Avoid gate-change tips, document-keeping tips, or umsteigezeit tips
+- Avoid monetary promises like "bis zu 600 €"
 
 ## Hashtags
 #FlugNinja #Flugentschädigung #EU261 #Reiserecht
