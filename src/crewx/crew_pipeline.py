@@ -69,12 +69,32 @@ TIP_LANGUAGE = [
     "anspruchs-check",
     "anspruchscheck",
     "lohnt sich",
+    "wichtig ist",
+    "sofort",
+    "am besten",
+    "trinken sie",
+    "packen sie",
+    "bleiben sie",
+    "achten sie",
 ]
 
 MAX_TYPES_PER_BATCH = {
     "travel_hack": 1,
     "passenger_rights_quick": 1,
 }
+
+TOPIC_KEYWORDS = [
+    "flug",
+    "airline",
+    "boarding",
+    "gate",
+    "flughafen",
+    "passagier",
+    "flugninja",
+    "flugversp",
+    "annull",
+    "überbuch",
+]
 
 FORBIDDEN_CLAIM_PHRASES = [
     "abflugort in der eu",
@@ -98,6 +118,8 @@ FORBIDDEN_CLAIM_PHRASES = [
     "überbuchungen sind üblich",
     "außergewöhnlich",
     "außergewöhnliche umstände",
+    "absichtlich überbuch",
+    "um leerplätze zu",
 ]
 
 
@@ -115,7 +137,7 @@ def _count_keyword_hits(texts: list[str], needles: list[str]) -> int:
     return hits
 
 
-def _violates_hard_rules(text: str) -> bool:
+def _violates_hard_rules(text: str, *, strict: bool = True) -> bool:
     lower_text = (text or "").lower()
 
     if any(p in lower_text for p in FORBIDDEN_CLAIM_PHRASES):
@@ -135,6 +157,27 @@ def _violates_hard_rules(text: str) -> bool:
 
     if "eu-verordnung 261/2004" in lower_text or "verordnung 261/2004" in lower_text or "eu261" in lower_text or "eu-261" in lower_text:
         return True
+
+    if "bis zu 600" in lower_text or "600 €" in lower_text or "600€" in lower_text:
+        return True
+
+    if "gate-änder" in lower_text or "gate ändern" in lower_text or "gate-wechsel" in lower_text:
+        return True
+    if "anzeigetafel" in lower_text or "anzeigen" in lower_text:
+        return True
+    if "e-mail" in lower_text or "email" in lower_text or "sms" in lower_text:
+        return True
+    if "buchungsbestätigung" in lower_text or "buchungsdetails" in lower_text or "nachrichten der airline" in lower_text:
+        return True
+    if "umsteigezeit" in lower_text or "umsteigezeiten" in lower_text or "umsteig" in lower_text:
+        return True
+    if "anschlussflug" in lower_text or "pufferzeit" in lower_text:
+        return True
+    if "checkliste" in lower_text or "drei tipps" in lower_text:
+        return True
+
+    if strict:
+        return False
 
     return False
 
@@ -179,8 +222,15 @@ def _filter_crewai_tweets(
         if allowed_types and tweet_type not in allowed_types:
             continue
 
+        lower_text = text.lower()
+        if not any(k in lower_text for k in TOPIC_KEYWORDS):
+            continue
+
         if tweet_type == "industry_insight":
-            lower_text = text.lower()
+            if any(p in lower_text for p in TIP_LANGUAGE):
+                continue
+
+        if tweet_type == "fun_fact":
             if any(p in lower_text for p in TIP_LANGUAGE):
                 continue
 
@@ -388,6 +438,32 @@ def _build_review_prompt(*, n_tweets: int) -> str:
     ).strip()
 
 
+def _build_quality_prompt(*, n_tweets: int) -> str:
+    return dedent(
+        f"""
+        You are a quality reviewer for German tweets.
+        Keep only tweets that are clear, concrete, and non-redundant.
+
+        Quality rules:
+        - Remove generic or vague statements.
+        - Remove marketing fluff or empty phrases.
+        - Prefer specific details or situations.
+        - Remove near-duplicates or overly similar tweets.
+        - Remove tweets dominated by calls to action ("prüfen lassen", "kostenlose Prüfung", "lohnt sich").
+        - Remove tip-style tweets only if they are vague or repetitive.
+        - For fun_fact: no imperatives or CTA (e.g., "Ruhe bewahren", "Geduld haben", "achten Sie").
+        - Do NOT add new facts.
+        - Do NOT change tweet_type unless required.
+
+        Output MUST be a JSON array only.
+        Return up to {n_tweets} tweets in the SAME OBJECT FORMAT:
+        [
+          {{"tweet_type": "...", "opening_style": "question|tip|scenario|condition|mistake_fix|checklist|myth_vs_fact", "text": "...", "language": "de", "tags": ["..."]}}
+        ]
+        """
+    ).strip()
+
+
 def _build_post_prompt() -> str:
     return dedent(
         """
@@ -428,6 +504,7 @@ def run_generate_tweets_crewai() -> None:
 
     generator_role = roles.get("generator", {})
     reviewer_role = roles.get("reviewer", {})
+    quality_role = roles.get("quality_reviewer", {})
     poster_role = roles.get("poster", {})
 
     generator_agent = Agent(
@@ -442,6 +519,14 @@ def run_generate_tweets_crewai() -> None:
         role=reviewer_role.get("role") or "X Compliance Reviewer",
         goal=reviewer_role.get("goal") or "Ensure tweets comply with X constraints and style rules.",
         backstory=reviewer_role.get("backstory") or "You are a strict reviewer who fixes or removes non-compliant tweets.",
+        llm=llm,
+        verbose=settings.verbose,
+    )
+
+    quality_agent = Agent(
+        role=quality_role.get("role") or "Quality Reviewer",
+        goal=quality_role.get("goal") or "Filter out low-quality tweets and keep only clear, concrete outputs.",
+        backstory=quality_role.get("backstory") or "You are a senior editor focused on clarity and usefulness.",
         llm=llm,
         verbose=settings.verbose,
     )
@@ -476,51 +561,94 @@ def run_generate_tweets_crewai() -> None:
         context=[generate_task],
     )
 
+    quality_task = Task(
+        description=_build_quality_prompt(n_tweets=effective_n_tweets),
+        expected_output="A JSON array of high-quality tweet objects.",
+        agent=quality_agent,
+        context=[review_task],
+    )
+
     post_task = Task(
+        description=_build_post_prompt(),
+        expected_output="A JSON array of tweets ready to queue.",
+        agent=poster_agent,
+        context=[quality_task],
+    )
+
+    crew = Crew(
+        agents=[generator_agent, reviewer_agent, quality_agent, poster_agent],
+        tasks=[generate_task, review_task, quality_task, post_task],
+        process=Process.sequential,
+        verbose=settings.verbose,
+    )
+
+    review_only_task = Task(
         description=_build_post_prompt(),
         expected_output="A JSON array of tweets ready to queue.",
         agent=poster_agent,
         context=[review_task],
     )
 
-    crew = Crew(
+    review_only_crew = Crew(
         agents=[generator_agent, reviewer_agent, poster_agent],
-        tasks=[generate_task, review_task, post_task],
+        tasks=[generate_task, review_task, review_only_task],
         process=Process.sequential,
         verbose=settings.verbose,
     )
 
-    raw_result = crew.kickoff()
-    raw_str = str(raw_result or "")
-
     last_raw_path = f"{settings.out_dir}/last_raw_output.txt"
-    write_text(last_raw_path, raw_str)
+    tweets: list[dict] = []
+    max_attempts = 3
 
-    data = parse_tweets_response(raw_str, n_tweets=effective_n_tweets)
-    required_types = [t.name.strip() for t in active_types]
-    data["tweets"] = _assign_missing_types(data["tweets"], required_types)
+    for attempt in range(max_attempts):
+        raw_result = crew.kickoff()
+        raw_str = str(raw_result or "")
+        write_text(last_raw_path, raw_str)
 
-    max_travel_hack = max(1, effective_n_tweets // 5)
-    allowed_types = {t.name.strip().lower() for t in active_types} if forced_types else None
-    type_limits = {t.name.strip().lower(): 1 for t in active_types} if forced_types else None
-    tweets = _filter_crewai_tweets(
-        data["tweets"],
-        recent,
-        max_travel_hack=max_travel_hack,
-        allowed_types=allowed_types,
-        type_limits=type_limits,
-    )
-    if not tweets:
-        fallback = []
-        for t in data["tweets"]:
-            text = (t.get("text") or "").strip()
-            if not text:
+        try:
+            data = parse_tweets_response(raw_str, n_tweets=effective_n_tweets)
+        except ValueError:
+            # fallback to review-only flow if quality stage yields nothing
+            raw_result = review_only_crew.kickoff()
+            raw_str = str(raw_result or "")
+            write_text(last_raw_path, raw_str)
+            try:
+                data = parse_tweets_response(raw_str, n_tweets=effective_n_tweets)
+            except ValueError:
                 continue
-            if _violates_hard_rules(text):
-                continue
-            fallback = [t]
+
+        required_types = [t.name.strip() for t in active_types]
+        data["tweets"] = _assign_missing_types(data["tweets"], required_types)
+
+        max_travel_hack = max(1, effective_n_tweets // 5)
+        allowed_types = {t.name.strip().lower() for t in active_types}
+        type_limits = {t.name.strip().lower(): 1 for t in active_types} if forced_types else None
+        tweets = _filter_crewai_tweets(
+            data["tweets"],
+            recent,
+            max_travel_hack=max_travel_hack,
+            allowed_types=allowed_types,
+            type_limits=type_limits,
+        )
+        if not tweets:
+            fallback = []
+            for t in data["tweets"]:
+                text = (t.get("text") or "").strip()
+                if not text:
+                    continue
+                if attempt < max_attempts - 1 and _violates_hard_rules(text):
+                    continue
+                if attempt == max_attempts - 1 and _violates_hard_rules(text, strict=False):
+                    continue
+                fallback = [t]
+                break
+            tweets = fallback
+
+        if tweets:
             break
-        tweets = fallback
+
+    if not tweets:
+        return
 
     timestamp = now_timestamp()
     out_queue_path = f"{settings.out_dir}/post_queue_{timestamp}.json"
