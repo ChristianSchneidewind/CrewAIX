@@ -9,6 +9,7 @@ __pycache__/
 
 #env
 .env
+.envrc
 # Dev notes
 dev-notes.md
 # OS
