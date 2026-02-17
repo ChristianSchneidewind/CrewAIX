@@ -54,6 +54,20 @@ def tweet_task_prompt_for_type(
         CONTENT RULES:
         {rules_block}
 
+        TOPIC BUCKETS (pick a DIFFERENT bucket for each tweet and add the bucket key as a tag):
+        - boarding_gate (keywords: boarding, gate, einsteigen, boarden, boarding-gruppe)
+        - gepaeck_handgepaeck (keywords: gepäck, handgepäck, koffer, gepäckband)
+        - gepaeckverlust (keywords: gepäckverlust, verloren, beschädigt, verspätet)
+        - checkin_sitzplatz (keywords: check-in, sitzplatz, boardingpass)
+        - anschlussflug (keywords: anschlussflug, umsteigen, zubringer)
+        - wetter_irrops (keywords: wetter, sturm, schnee, gewitter, nebel)
+        - streik (keywords: streik, arbeitskampf, gewerkschaft)
+        - codeshare (keywords: codeshare, code-share, ausführende airline)
+        - sicherheit (keywords: sicherheitskontrolle, security, flüssigkeiten)
+        - reiseruecktritt_kulanz (keywords: reiserücktritt, storno, umbuchung, erstattung, kulanz)
+        - vielflieger (keywords: vielflieger, status, meilen, bonusprogramm)
+        - betreuung (keywords: betreuung, verpflegung, hotel, transfer, ersatzbeförderung)
+
         DIVERSITY RULES (VERY IMPORTANT):
         - Every tweet must feel clearly different from the others (nicht nur leicht umformuliert).
         - For each tweet, set an "opening_style" field with one of:
@@ -66,6 +80,7 @@ def tweet_task_prompt_for_type(
         - Avoid repeating the same brand-slogan or call-to-action in multiple tweets.
           For example, these phrases may appear AT MOST ONCE per batch:
           "FlugNinja hilft Ihnen", "Mehr erfahren: https://www.flugninja.at/", "#FlugNinja".
+        - Limit brand/CTA content to at most ONE tweet per batch (FlugNinja, URL, "kostenlos prüfen", hashtags).
         - Do NOT mention "EU-Abflughafen" or "EU-Abflughäfen".
         - Do NOT invent time thresholds like "ab 3 Stunden" (not in the brief).
         - Only mention "Österreich" or "ab/nach Österreich" when it is truly relevant to the tweet.
@@ -87,7 +102,10 @@ def tweet_task_prompt_for_type(
         - Each tweet must include at least ONE concrete detail:
           a condition, a tip, a typical scenario, a limit ("bis zu …"),
           or a misconception + correction.
-        - Tags: add 1–2 short tags that describe the angle (e.g. ["tip"], ["myth"], ["scenario"], ["checklist"]).
+        - Each tweet must introduce a NEW concrete detail that is not repeated in the batch.
+        - Tags: add 1–2 short tags. Include exactly ONE bucket tag from the list above and optionally
+          one angle tag (e.g. ["tip"], ["myth"], ["scenario"], ["checklist"]).
+        - The bucket tag MUST match the tweet content (use the bucket's keywords explicitly).
 
         RECENT TWEETS (do NOT repeat, do NOT paraphrase closely):
         {recent_block}
@@ -112,7 +130,7 @@ def tweet_task_prompt_for_type(
           - "text": string (max 240 chars)
           - "language": "de"
           - "tags": array of short strings (may be empty)
-        - No hashtag spam. Max 2 hashtags total if any.
+        - Avoid hashtags unless the tweet is marketing. If you must use hashtags, max 2 total.
         - Each tweet must contain at least ONE concrete useful detail, tip, or condition.
 
         IF YOU CANNOT FOLLOW THESE RULES, OUTPUT:
@@ -128,11 +146,20 @@ def build_generation_prompt(
     tweet_type,
     recent_tweets: list[str],
     n_tweets: int,
+    ideas_md: str | None = None,
 ) -> str:
-    return tweet_task_prompt_for_type(
+    prompt = tweet_task_prompt_for_type(
         md_context=company_md,
         tt=tweet_type,
         n_candidates=n_tweets,
         history_texts=recent_tweets,
     )
+    if ideas_md:
+        prompt = (
+            prompt
+            + "\n\nIDEA BANK (use these ideas when possible):\n---\n"
+            + ideas_md.strip()
+            + "\n---\n"
+        )
+    return prompt
 

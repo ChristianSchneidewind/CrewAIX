@@ -138,7 +138,7 @@ def _normalize_tag(tag: str) -> str:
     return mapping.get(t, t)
 
 
-def parse_tweets_response(raw: str, *, n_tweets: int) -> dict[str, Any]:
+def parse_tweets_response(raw: str, *, n_tweets: int, default_tweet_type: str | None = None) -> dict[str, Any]:
     """Parse model output into a normalized tweets structure.
 
     Returns: {"tweets": [ {tweet_type,text,language,tags}, ... ] }
@@ -186,6 +186,7 @@ def parse_tweets_response(raw: str, *, n_tweets: int) -> dict[str, Any]:
         tweet_type = str(t.get("tweet_type") or "").strip()
         text = str(t.get("text") or "").strip()
         language = str(t.get("language") or "de").strip() or "de"
+        opening_style = str(t.get("opening_style") or "").strip()
         tags_raw = t.get("tags")
         if isinstance(tags_raw, list):
             tags_list = tags_raw
@@ -195,9 +196,15 @@ def parse_tweets_response(raw: str, *, n_tweets: int) -> dict[str, Any]:
         tags_norm = [_normalize_tag(str(x)) for x in tags_list if str(x).strip()]
         tags_norm = [t for t in tags_norm if t]
 
+        if not tweet_type:
+            tweet_type = default_tweet_type or "unknown"
+        if not tags_norm:
+            tags_norm = []
+
         norm.append(
             {
                 "tweet_type": tweet_type,
+                "opening_style": opening_style,
                 "text": text,
                 "language": language,
                 "tags": tags_norm,
