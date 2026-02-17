@@ -1,0 +1,67 @@
+# Tweet Ideas
+
+**Generated:** 2026-02-16 13:55:48
+**Source:** /tmp/skills-MweeA9/tweet-ideas/tweets-2026-02-16-140000.md
+
+---
+
+- Wer am Gate nichts fragt, bekommt auch nichts. Informationen fallen nicht vom Himmel.
+- Informationen am Gate sind oft spät. Dein Check sollte es nicht sein.
+- Der Gate-Moment entscheidet. Deine Vorbereitung auch.
+- Du stehst am Gate und keiner sagt dir, was als Nächstes passiert? Genau hier verlieren viele ihre Ansprüche.
+- Boarding verweigert und du weißt nicht, ob du das akzeptieren musst.
+- Verspätet heißt nicht verloren – wenn du die nächsten 5 Minuten nutzt.
+- Umbuchung kostet Zeit. Unwissen kostet mehr.
+- Du bekommst eine Umbuchung – aber keine Erklärung.
+- Eine Umbuchung löst nicht immer den Anspruch – manchmal schafft sie ihn erst.
+- Rückflug gestrichen, Hotel gebucht, Urlaub zu Ende – und jetzt?
+- Wenn du deine Ansprüche nicht prüfst, schenkst du der Airline Geld, das dir zusteht.
+- Warten auf gute Laune der Airline ist keine Strategie. Prüfen. Entscheiden. Handeln.
+- Du verpasst keinen Anspruch, weil du Pech hast – sondern weil du ihn nicht prüfst.
+- „Wird schon passen“ ist die teuerste Reise-Strategie.
+- Wenn dein Flug ausfällt, bist du nicht machtlos – nur uninformiert.
+- Der größte Fehler nach einer Annullierung? Gar nichts zu tun.
+- Wer zu spät reagiert, bezahlt die Verspätung doppelt: mit Zeit und Geld.
+- Entschädigung ist kein Glücksfall. Es ist ein Anspruch, wenn die Bedingungen passen.
+- Dein Recht entsteht nicht am Schalter – sondern in deinem nächsten Schritt.
+- Rechte wirken erst, wenn man sie nutzt.
+- Annullierung heißt nicht Ende der Reise – sondern Start der Ansprüche.
+- Ein kurzer Check spart oft langen Ärger.
+- Wenn der Flug nicht läuft, müssen die Prozesse laufen.
+- Rechte sind keine Diskussion – nur eine Prüfung entfernt.
+- Der Unterschied zwischen Ärger und Lösung ist ein Klick.
+- Wer Rechte kennt, reist ruhiger.
+- Annullierung am Flughafen und plötzlich bist du allein mit allen Fragen.
+- Verspätung bedeutet nicht nur Warten – sondern oft verpasste Pläne.
+- Familien mit Kindern trifft ein Ausfall doppelt: Zeit und Stress.
+- Viele lassen Ansprüche liegen, weil sie die Bedingungen nicht kennen.
+- Der häufigste Fehler nach einer Verspätung: nichts dokumentieren, nichts prüfen.
+- Du willst nur nach Hause – aber dein Flugplan will etwas anderes.
+- Nicht die lauteste Beschwerde bringt Klarheit – sondern die richtige Prüfung.
+- Mehr Informationen am Gate sind selten. Mehr Information bei dir ist leicht.
+- Zeit sparen beim Reisen beginnt oft damit, langsam zu entscheiden.
+- Der kleinste Schritt nach einer Annullierung ist oft der wirksamste: prüfen lassen.
+- Die meisten denken: „Ich muss jetzt sofort handeln.“ Oft reicht es, erst zu prüfen.
+- „Nur Pech gehabt“ stimmt seltener, als viele denken.
+- Der Check kostet nichts – das Nicht-Checken schon.
+- Wer früh prüft, muss später weniger diskutieren.
+- Ein verpasster Anschluss ist nicht immer dein Fehler.
+- Fluggastrechte sind ein Prozess, kein Moment.
+- Ein Anspruch entsteht nicht durch Ärger, sondern durch Bedingungen.
+- Klarheit spart Reisenden mehr Nerven als jede Lounge.
+- Die beste Reiseversicherung ist Information.
+- Flugprobleme sind unausweichlich – Orientierung ist optional.
+- Reisen ist planbar. Unregelmäßigkeiten sind es auch – wenn man weiß, wie.
+- Flugausfall + Check = weniger Chaos.
+- Der echte Vorteil bei Flugproblemen: wenn du den nächsten Schritt kennst.
+- Die Entscheidung nach einer Störung bestimmt, wie gut die Reise endet.
+- Fluggastrechte sind nicht kompliziert – nur schlecht erklärt.
+- Das Gate ist kein Orakel. Wer prüft, weiß.
+- Annulliert? Deine Story beginnt jetzt – nicht am Schalter.
+- Wer nach dem Flug Klarheit will, sollte vor dem Flug wissen, was zählt.
+- Ein kleiner Check kann mehr bewirken als ein langer Streit.
+- Dein Boarding ist verweigert, dein Anspruch nicht.
+- Reisen endet nicht am Gate – Probleme auch nicht.
+- Wenn die Airline schweigt, sollte dein nächster Schritt sprechen.
+- Ein verpasster Anschluss ist selten das Ende – aber oft der Anfang der Fragen.
+- Der schnellste Weg aus dem Chaos ist ein klarer Prozess.

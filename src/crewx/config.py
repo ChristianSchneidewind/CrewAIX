@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+from dotenv import load_dotenv
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -17,6 +19,7 @@ class Settings:
     tweets_md_path: str = "content/tweets.md"
     tweet_types_md_path: str = "content/tweet_types.md"
     crew_roles_md_path: str = "content/crew_roles.md"
+    ideas_md_path: str = "content/ideas.md"
 
     # Output
     out_dir: str = "out"
@@ -29,7 +32,7 @@ class Settings:
     embedding_model_name: str | None = None
     embedding_api_base: str | None = None
     embedding_api_key: str | None = None
-    embedding_similarity_threshold: float = 0.88
+    embedding_similarity_threshold: float = 0.85
     embedding_history_max: int = 30
 
     # Optional: force specific tweet types per run
@@ -45,14 +48,16 @@ def _get_env(name: str, default: str | None = None) -> str | None:
 
 
 def load_settings() -> Settings:
-    # Defaults are chosen to match your .env conventions
-    openai_api_base = _get_env("OPENAI_API_BASE", "http://localhost:11434") or "http://localhost:11434"
-    openai_api_key = _get_env("OPENAI_API_KEY", "ollama") or "ollama"
-    openai_model_name = _get_env("OPENAI_MODEL_NAME", "ollama/llama3.2:3b") or "ollama/llama3.2:3b"
+    load_dotenv(override=False)
+    # Defaults are chosen to match the cloud-only .env conventions
+    openai_api_base = _get_env("OPENAI_API_BASE", "https://api.openai.com/v1") or "https://api.openai.com/v1"
+    openai_api_key = _get_env("OPENAI_API_KEY", "") or ""
+    openai_model_name = _get_env("OPENAI_MODEL_NAME", "gpt-4.1-mini") or "gpt-4.1-mini"
 
     tweets_md_path = _get_env("TWEETS_MD_PATH", "content/tweets.md") or "content/tweets.md"
     tweet_types_md_path = _get_env("TWEET_TYPES_MD_PATH", "content/tweet_types.md") or "content/tweet_types.md"
     crew_roles_md_path = _get_env("CREW_ROLES_MD_PATH", "content/crew_roles.md") or "content/crew_roles.md"
+    ideas_md_path = _get_env("IDEAS_MD_PATH", "content/ideas.md") or "content/ideas.md"
     out_dir = _get_env("OUT_DIR", "out") or "out"
     forced_types_raw = _get_env("FORCE_TWEET_TYPES", "") or ""
     forced_tweet_types = tuple([t.strip() for t in forced_types_raw.split(",") if t.strip()])
@@ -60,7 +65,7 @@ def load_settings() -> Settings:
     embedding_model_name = _get_env("EMBEDDING_MODEL_NAME", "text-embedding-3-small")
     embedding_api_base = _get_env("EMBEDDING_API_BASE", "https://api.openai.com/v1")
     embedding_api_key = _get_env("EMBEDDING_API_KEY", None)
-    embedding_similarity_threshold = float(_get_env("EMBEDDING_SIMILARITY_THRESHOLD", "0.88") or "0.88")
+    embedding_similarity_threshold = float(_get_env("EMBEDDING_SIMILARITY_THRESHOLD", "0.85") or "0.85")
     embedding_history_max = int(_get_env("EMBEDDING_HISTORY_MAX", "30") or "30")
 
     # Optional knobs
@@ -70,6 +75,12 @@ def load_settings() -> Settings:
     # Temperature/verbose are optional; keep safe defaults
     temperature = float(_get_env("TEMPERATURE", "0.7") or "0.7")
     verbose = (_get_env("VERBOSE", "false") or "false").lower() in {"1", "true", "yes", "y", "on"}
+
+    if not openai_api_key:
+        raise ValueError(
+            "OPENAI_API_KEY is missing. Set it in your .env before running cloud-only generation."
+        )
+
     return Settings(
         openai_api_base=openai_api_base,
         openai_api_key=openai_api_key,
@@ -79,6 +90,7 @@ def load_settings() -> Settings:
         tweets_md_path=tweets_md_path,
         tweet_types_md_path=tweet_types_md_path,
         crew_roles_md_path=crew_roles_md_path,
+        ideas_md_path=ideas_md_path,
         out_dir=out_dir,
         n_tweets=n_tweets,
         recent_tweets_max=recent_tweets_max,
