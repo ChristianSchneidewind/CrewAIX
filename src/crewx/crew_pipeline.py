@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import json
 import math
+import time
 from typing import Iterable
 
 from litellm import embedding as litellm_embedding
@@ -53,12 +54,32 @@ KEYWORD_QUOTAS = {
         "needles": ["eu-verordnung 261/2004", "verordnung 261/2004", "eu261", "eu-261"],
         "max_per_batch": 1,
     },
+    "annullierung": {
+        "needles": ["annull", "gestrichen"],
+        "max_per_batch": 1,
+    },
+    "verspaetung": {
+        "needles": ["verspät", "verspaet"],
+        "max_per_batch": 1,
+    },
+    "ueberbuchung": {
+        "needles": ["überbuch", "ueberbuch", "boarding verweigert", "nicht mitfliegen"],
+        "max_per_batch": 1,
+    },
+    "entschaedigung": {
+        "needles": ["entschäd", "entschaed", "kompensation", "ausgleichszahlung"],
+        "max_per_batch": 1,
+    },
 }
 
 KEYWORD_HISTORY_LIMITS = {
     "gate_changes": 0,
     "connections": 1,
     "eu261": 0,
+    "annullierung": 999,
+    "verspaetung": 999,
+    "ueberbuchung": 999,
+    "entschaedigung": 999,
 }
 
 TIP_LANGUAGE = [
@@ -100,6 +121,85 @@ TOPIC_KEYWORDS = [
     "überbuch",
 ]
 
+TOPIC_BUCKETS = {
+    "boarding_gate": ["boarding", "gate", "einsteigen", "boarden", "boarding-gruppe", "boardinggruppe"],
+    "gepaeck_handgepaeck": ["gepäck", "gepaeck", "handgepäck", "handgepaeck", "koffer", "gepäckband"],
+    "gepaeckverlust": ["gepäckverlust", "gepaeckverlust", "gepäck verspätet", "gepaeck verspätet", "verloren", "beschädigt"],
+    "checkin_sitzplatz": ["check-in", "checkin", "sitzplatz", "sitz", "boardingpass", "mobile boarding"],
+    "anschlussflug": ["anschlussflug", "zubringer", "umsteig", "umsteigen", "connection", "transit"],
+    "wetter_irrops": ["wetter", "sturm", "schnee", "gewitter", "nebel", "vereisung"],
+    "streik": ["streik", "arbeitskampf", "gewerkschaft"],
+    "codeshare": ["codeshare", "code-share", "allianz", "operating carrier", "durchführende airline"],
+    "sicherheit": ["sicherheitskontrolle", "security", "flughafensicherheit", "kontrolle", "flüssigkeiten", "liquids"],
+    "reiseruecktritt_kulanz": ["reiserücktritt", "reiseruecktritt", "storno", "umbuchung", "erstattung", "gutschein", "kulanz"],
+    "vielflieger": ["vielflieger", "status", "meilen", "bonusprogramm", "frequent flyer"],
+    "betreuung": ["betreuung", "verpflegung", "hotel", "transfer", "ersatzbeförderung"],
+}
+
+BUCKET_TAGS = set(TOPIC_BUCKETS.keys())
+
+BUCKET_HISTORY_WINDOW = 15
+BUCKET_HISTORY_MAX = 1
+IDEA_BANK_MAX_ITEMS = 10
+ACTIVE_BUCKETS = [
+    "boarding_gate",
+    "gepaeck_handgepaeck",
+    "checkin_sitzplatz",
+    "wetter_irrops",
+    "streik",
+]
+
+BRAND_TERMS = [
+    "flugninja",
+    "flugninja.at",
+    "https://www.flugninja.at/",
+    "#flugninja",
+]
+
+CTA_TERMS = [
+    "mehr infos",
+    "mehr erfahren",
+    "jetzt prüfen",
+    "anspruch prüfen",
+    "kostenlos prüfen",
+    "kostenlose prüfung",
+    "kostenloser anspruchs-check",
+    "anspruchs-check",
+    "anspruchscheck",
+]
+
+DETAIL_KEYWORDS = [
+    "wenn",
+    "falls",
+    "sobald",
+    "vor",
+    "nach",
+    "bei",
+    "am gate",
+    "am band",
+    "sicherheitskontrolle",
+    "check-in",
+    "checkin",
+    "boarding",
+    "koffer",
+    "handgepäck",
+    "handgepaeck",
+    "gepäck",
+    "gepaeck",
+    "schalter",
+    "formular",
+    "ersatz",
+    "umbuch",
+    "gutschein",
+    "verpflegung",
+    "hotel",
+]
+
+DETAIL_NUMBER_PATTERN = re.compile(r"\d")
+HASHTAG_PATTERN = re.compile(r"#\w+")
+
+URL_PATTERN = re.compile(r"https?://\S+")
+
 FORBIDDEN_CLAIM_PHRASES = [
     "abflugort in der eu",
     "in der eu startet",
@@ -139,6 +239,256 @@ def _count_keyword_hits(texts: list[str], needles: list[str]) -> int:
         if any(n in lower for n in needles):
             hits += 1
     return hits
+
+
+def _extract_bucket(text: str, tags: list[str] | None) -> str | None:
+    tags = tags or []
+    bucket_tags = []
+    for tag in tags:
+        norm = (tag or "").strip().lower().lstrip("#")
+        if norm in BUCKET_TAGS:
+            bucket_tags.append(norm)
+    if len(bucket_tags) != 1:
+        return None
+    return bucket_tags[0]
+
+
+def _contains_brand_or_cta(text: str, tags: list[str] | None) -> bool:
+    lower = (text or "").lower()
+    tag_values = [str(t).strip().lower().lstrip("#") for t in (tags or []) if str(t).strip()]
+
+    if URL_PATTERN.search(lower):
+        return True
+    if any(term in lower for term in BRAND_TERMS):
+        return True
+    if any(term in lower for term in CTA_TERMS):
+        return True
+    if any(term.replace("#", "").strip() in tag_values for term in BRAND_TERMS if term.startswith("#")):
+        return True
+    if "flugninja" in tag_values:
+        return True
+    return False
+
+
+def _bucket_matches_text(bucket: str, text: str) -> bool:
+    needles = TOPIC_BUCKETS.get(bucket, [])
+    lower = (text or "").lower()
+    return any(n in lower for n in needles)
+
+
+def _infer_bucket_from_text(text: str) -> str | None:
+    lower = (text or "").lower()
+    for bucket, needles in TOPIC_BUCKETS.items():
+        if any(n in lower for n in needles):
+            return bucket
+    return None
+
+
+def _count_recent_bucket_hits(texts: list[str], bucket: str) -> int:
+    hits = 0
+    for t in texts:
+        if _infer_bucket_from_text(t) == bucket:
+            hits += 1
+    return hits
+
+
+def _is_allowed_bucket(bucket: str) -> bool:
+    return bucket in ACTIVE_BUCKETS
+
+
+def _trim_idea_bank(ideas_md: str | None) -> str:
+    if not ideas_md:
+        return "(none)"
+    lines = [line.strip() for line in ideas_md.splitlines()]
+    bullets = [line for line in lines if line.startswith("- ")]
+    if bullets:
+        trimmed = bullets[:IDEA_BANK_MAX_ITEMS]
+        return "\n".join(trimmed)
+    return "\n".join(lines[:IDEA_BANK_MAX_ITEMS])
+
+
+def _trim_company_context(company_md: str) -> str:
+    allowed_sections = {
+        "company",
+        "product / offer",
+        "target audience",
+        "tone & voice",
+        "proof / facts (only use these)",
+        "content pillars",
+    }
+    blocks = re.split(r"(?m)^##\s+", company_md)
+    out: list[str] = []
+    for block in blocks[1:]:
+        lines = block.strip().splitlines()
+        if not lines:
+            continue
+        heading = lines[0].strip().lower()
+        if heading in allowed_sections:
+            out.append("## " + lines[0].strip())
+            out.extend(lines[1:])
+            out.append("")
+    return "\n".join(out).strip() or company_md.strip()
+
+
+def _infer_opening_style(text: str) -> str:
+    lower = (text or "").lower().strip()
+    if "?" in lower:
+        return "question"
+    if lower.startswith(("wenn ", "falls ", "sobald ", "sofern ")):
+        return "condition"
+    if any(p in lower for p in ["ich ", "mein ", "meine ", "wir ", "uns ", "mich "]):
+        return "scenario"
+    return "tip"
+
+
+def _normalize_candidate_fields(t: dict) -> dict:
+    text = (t.get("text") or "").strip()
+    if not text:
+        return t
+
+    if not (t.get("language") or "").strip():
+        t["language"] = "de"
+
+    if not (t.get("opening_style") or "").strip():
+        t["opening_style"] = _infer_opening_style(text)
+
+    tags = t.get("tags") if isinstance(t.get("tags"), list) else []
+    bucket = _infer_bucket_from_text(text)
+    if bucket and bucket not in tags:
+        tags.append(bucket)
+
+    if t.get("opening_style") and len(tags) < 2 and t["opening_style"] not in tags:
+        tags.append(t["opening_style"])
+
+    t["tags"] = tags
+    return t
+
+
+def _has_concrete_detail(text: str) -> bool:
+    lower = (text or "").lower()
+    if DETAIL_NUMBER_PATTERN.search(lower):
+        return True
+    return any(k in lower for k in DETAIL_KEYWORDS)
+
+
+def _has_hashtag(text: str) -> bool:
+    return bool(HASHTAG_PATTERN.search(text or ""))
+
+
+def _accept_relaxed_candidate(
+    t: dict,
+    *,
+    allowed_types: set[str] | None,
+    type_limits: dict[str, int] | None,
+) -> bool:
+    text = (t.get("text") or "").strip()
+    if not text:
+        return False
+
+    tweet_type = (t.get("tweet_type") or "").strip().lower()
+    if allowed_types and tweet_type not in allowed_types:
+        return False
+    if type_limits and tweet_type in type_limits and type_limits[tweet_type] <= 0:
+        return False
+
+    tags = t.get("tags") if isinstance(t.get("tags"), list) else []
+
+    if _violates_hard_rules(text):
+        return False
+    if not _has_concrete_detail(text):
+        return False
+
+    bucket = _extract_bucket(text, tags)
+    if not bucket:
+        return False
+
+    if _has_hashtag(text) and tweet_type != "marketing":
+        return False
+
+    if _contains_brand_or_cta(text, tags):
+        return tweet_type == "marketing"
+
+    return True
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "rate limit" in message or "rate_limit" in message or "429" in message
+
+
+def _is_request_too_large(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "request too large" in message or "must be reduced" in message
+
+
+def _is_connection_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "connection error" in message or "no route to host" in message or "connecterror" in message
+
+
+class _RateLimitHit(RuntimeError):
+    pass
+
+
+def _parse_retry_after_seconds(message: str) -> float | None:
+    lower = (message or "").lower()
+    match = re.search(r"try again in\s+([0-9.]+)\s*(ms|s)", lower)
+    if not match:
+        return None
+    value = float(match.group(1))
+    unit = match.group(2)
+    if unit == "ms":
+        return value / 1000.0
+    return value
+
+
+def _kickoff_with_retry(
+    crew: Crew,
+    *,
+    max_retries: int = 6,
+    base_delay: float = 2.0,
+    fail_fast_on_rate_limit: bool = False,
+) -> str:
+    last_exc: Exception | None = None
+    for attempt in range(max_retries + 1):
+        try:
+            return str(crew.kickoff() or "")
+        except Exception as exc:
+            if _is_rate_limit_error(exc):
+                if fail_fast_on_rate_limit:
+                    raise _RateLimitHit(str(exc))
+                if attempt < max_retries:
+                    message = str(exc)
+                    retry_after = _parse_retry_after_seconds(message)
+                    delay = retry_after if retry_after is not None else base_delay * (attempt + 1)
+                    time.sleep(delay + 0.25)
+                    last_exc = exc
+                    continue
+            if _is_connection_error(exc) and attempt < max_retries:
+                delay = min(60.0, base_delay * (attempt + 1) * 3)
+                _append_text(
+                    f"{Path.cwd()}/out/last_raw_output.txt",
+                    f"CONNECTION ERROR\nattempt={attempt + 1}\ndelay={delay}s\nerror={exc}\n\n",
+                )
+                time.sleep(delay)
+                last_exc = exc
+                continue
+            raise
+    if last_exc:
+        raise last_exc
+    return ""
+
+
+def _append_text(path: str, text: str) -> None:
+    p = Path(path)
+    ensure_dir(p.parent)
+    with p.open("a", encoding="utf-8") as handle:
+        handle.write(text)
+
+
+def _is_embedding_auth_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "invalid_api_key" in message or "incorrect api key" in message or "401" in message
 
 
 def _cosine_similarity(a: Iterable[float], b: Iterable[float]) -> float:
@@ -283,9 +633,12 @@ def _filter_crewai_tweets(
 ) -> list[dict]:
     filtered: list[dict] = []
     type_counts: dict[str, int] = {}
+    bucket_counts: dict[str, int] = {}
+    brand_hits = 0
     accepted_embeddings: list[list[float]] = []
     doc_tip_in_recent = any(_is_doc_tip(t) for t in recent_texts)
     recent_scope = recent_texts[:50] if recent_texts else []
+    recent_bucket_scope = recent_texts[:BUCKET_HISTORY_WINDOW] if recent_texts else []
     doc_tip_recent_hits = _count_keyword_hits(recent_scope, DOCUMENT_PATTERNS)
 
     for t in tweets:
@@ -297,6 +650,7 @@ def _filter_crewai_tweets(
         if allowed_types and tweet_type not in allowed_types:
             continue
 
+        tags = t.get("tags") if isinstance(t.get("tags"), list) else []
         lower_text = text.lower()
         if not any(k in lower_text for k in TOPIC_KEYWORDS):
             continue
@@ -328,6 +682,31 @@ def _filter_crewai_tweets(
         if _violates_hard_rules(text):
             continue
 
+        if not _has_concrete_detail(text):
+            continue
+
+        bucket = _extract_bucket(text, tags)
+        if not bucket:
+            continue
+        if not _is_allowed_bucket(bucket):
+            continue
+        if not _bucket_matches_text(bucket, text):
+            continue
+        if bucket_counts.get(bucket, 0) >= 1:
+            continue
+        if _count_recent_bucket_hits(recent_bucket_scope, bucket) >= BUCKET_HISTORY_MAX:
+            continue
+
+        if _has_hashtag(text) and tweet_type != "marketing":
+            continue
+
+        if _contains_brand_or_cta(text, tags):
+            if tweet_type != "marketing":
+                continue
+            if brand_hits >= 1:
+                continue
+            brand_hits += 1
+
         keyword_blocked = False
         for key, quota in KEYWORD_QUOTAS.items():
             needles = quota["needles"]
@@ -358,8 +737,22 @@ def _filter_crewai_tweets(
 
         filtered.append(t)
         type_counts[tweet_type] += 1
+        bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
 
-    return filtered
+    if not filtered:
+        return []
+
+    unique: list[dict] = []
+    seen_buckets: set[str] = set()
+    for t in filtered:
+        tags = t.get("tags") if isinstance(t.get("tags"), list) else []
+        bucket = _extract_bucket(t.get("text", ""), tags)
+        if not bucket or bucket in seen_buckets:
+            continue
+        seen_buckets.add(bucket)
+        unique.append(t)
+
+    return unique
 
 
 def _parse_roles_md(md: str) -> dict[str, dict[str, str]]:
@@ -436,57 +829,75 @@ def fix_history_unknown_types(out_dir: str, fallback_type: str = "educational") 
     return changed
 
 
+def _format_types_md(types: list[TweetType]) -> str:
+    lines = ["# Tweet Types (compact)"]
+    for tt in types:
+        lines.append(f"## {tt.name}")
+        if tt.goal:
+            lines.append(f"Goal: {tt.goal}")
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
 def _build_generator_prompt(
     *,
     company_md: str,
     types_md: str,
+    ideas_md: str | None,
     n_tweets: int,
     recent: list[str],
     required_types: list[str] | None = None,
 ) -> str:
-    recent_block = "\n".join(f"- {t}" for t in recent[-5:]) if recent else "(none)"
+    recent_block = "\n".join(f"- {t}" for t in recent[-3:]) if recent else "(none)"
+    ideas_block = _trim_idea_bank(ideas_md)
+    company_block = _trim_company_context(company_md)
     return dedent(
         f"""
-        You write German tweets for the company described below.
-        Output MUST be a JSON array only (no markdown, no explanation).
+        Write German tweets for the company below.
+        Output MUST be a JSON array only. Each item is an object with keys:
+        tweet_type, opening_style, text, language, tags. No plain strings.
 
-        COMPANY CONTEXT (Markdown):
+        COMPANY CONTEXT:
         ---
-        {company_md}
+        {company_block}
         ---
 
-        TWEET TYPES (Markdown):
+        IDEA BANK (subset):
+        ---
+        {ideas_block}
+        ---
+
+        TWEET TYPES:
         ---
         {types_md}
         ---
 
-        REQUIRED TYPES:
-        {", ".join(required_types) if required_types else "(none)"}
+        REQUIRED TYPES: {", ".join(required_types) if required_types else "(none)"}
 
-        DIVERSITY RULES:
-        - Produce exactly {n_tweets} tweets with varied angles and different openings.
-        - Use at least 3 different tweet_type values in the batch.
-        - Max 1 travel_hack per batch.
-        - If a list of required tweet types is provided, generate EXACTLY one tweet per type.
-        - Avoid repetitive openings like "Wussten Sie/Wissen Sie/Haben Sie gewusst".
-        - Avoid "Mythos/Fakt/Irrtum/Falsch" openings.
-        - Avoid "Checkliste/Schritte" wording.
-        - Avoid repeating the same scenario (e.g., Anschlussflug/Zubringer) more than once.
-        - If you generate travel_hack tweets, avoid document-keeping tips (Boardingpass/Buchungsbestätigung/Airline-Nachrichten).
-          Use other angles like security prep, gate-change checks, carry-on limits, connection buffer, seat choice, hydration.
+        BUCKET TAGS (pick a DIFFERENT one per tweet and include it in tags):
+        boarding_gate, gepaeck_handgepaeck, checkin_sitzplatz, wetter_irrops, streik
 
-        X CONSTRAINTS:
-        - Max 240 characters per tweet.
-        - Max 2 hashtags total per tweet.
-        - Emojis 0–2.
+        DIVERSITY:
+        - Exactly {n_tweets} tweets, varied angles and openings.
+        - At least 2 different tweet_type values.
+        - Max 1 travel_hack.
+        - If REQUIRED TYPES given: exactly one per type.
+        - New concrete detail per tweet; no repeated scenario/claim in batch.
+        - Brand/CTA at most ONE tweet.
+        - Avoid "Wussten Sie/Wissen Sie/Haben Sie gewusst", "Mythos/Fakt/Irrtum/Falsch", "Checkliste/Schritte".
+        - travel_hack: avoid document-keeping tips.
 
-        RECENT TWEETS (do not repeat):
+        TAGS:
+        - Exactly ONE bucket tag + optional ONE angle tag (tip/scenario/condition/etc.).
+
+        X:
+        - Max 240 chars, no hashtags unless marketing, emojis 0–2.
+
+        RECENT (avoid repeats):
         {recent_block}
 
-        Output format:
-        [
-          {{"tweet_type": "...", "opening_style": "question|tip|scenario|condition|mistake_fix|checklist|myth_vs_fact", "text": "...", "language": "de", "tags": ["..."]}}
-        ]
+        Output:
+        [{{"tweet_type":"...","opening_style":"question|tip|scenario|condition|mistake_fix|checklist|myth_vs_fact","text":"...","language":"de","tags":["..."]}}]
         """
     ).strip()
 
@@ -509,7 +920,7 @@ def _build_review_prompt(*, n_tweets: int) -> str:
         If a tweet violates the rules, rewrite it to comply while keeping the meaning.
         If it cannot be fixed, remove it.
 
-        Output MUST be a JSON array only.
+        Output MUST be a JSON array only. No strings.
         Return up to {n_tweets} tweets in the SAME OBJECT FORMAT:
         [
           {{"tweet_type": "...", "opening_style": "question|tip|scenario|condition|mistake_fix|checklist|myth_vs_fact", "text": "...", "language": "de", "tags": ["..."]}}
@@ -538,7 +949,7 @@ def _build_quality_prompt(*, n_tweets: int) -> str:
         - Do NOT add new facts.
         - Do NOT change tweet_type unless required.
 
-        Output MUST be a JSON array only.
+        Output MUST be a JSON array only. No strings.
         Return up to {n_tweets} tweets in the SAME OBJECT FORMAT:
         [
           {{"tweet_type": "...", "opening_style": "question|tip|scenario|condition|mistake_fix|checklist|myth_vs_fact", "text": "...", "language": "de", "tags": ["..."]}}
@@ -566,6 +977,11 @@ def run_generate_tweets_crewai() -> None:
     types_md = read_text(settings.tweet_types_md_path)
     roles = _load_roles(settings.crew_roles_md_path)
 
+    ideas_md = None
+    ideas_path = Path(settings.ideas_md_path)
+    if ideas_path.exists():
+        ideas_md = ideas_path.read_text(encoding="utf-8")
+
     all_types = parse_tweet_types_md(types_md)
     if not all_types:
         raise RuntimeError(f"No tweet types found in {settings.tweet_types_md_path}")
@@ -587,7 +1003,6 @@ def run_generate_tweets_crewai() -> None:
 
     generator_role = roles.get("generator", {})
     reviewer_role = roles.get("reviewer", {})
-    quality_role = roles.get("quality_reviewer", {})
     poster_role = roles.get("poster", {})
 
     generator_agent = Agent(
@@ -606,14 +1021,6 @@ def run_generate_tweets_crewai() -> None:
         verbose=settings.verbose,
     )
 
-    quality_agent = Agent(
-        role=quality_role.get("role") or "Quality Reviewer",
-        goal=quality_role.get("goal") or "Filter out low-quality tweets and keep only clear, concrete outputs.",
-        backstory=quality_role.get("backstory") or "You are a senior editor focused on clarity and usefulness.",
-        llm=llm,
-        verbose=settings.verbose,
-    )
-
     poster_agent = Agent(
         role=poster_role.get("role") or "Tweet Poster",
         goal=poster_role.get("goal") or "Prepare final tweets for the posting queue without altering content.",
@@ -622,141 +1029,251 @@ def run_generate_tweets_crewai() -> None:
         verbose=settings.verbose,
     )
 
-    required_types = [t.name.strip() for t in active_types]
-    effective_n_tweets = len(required_types) if forced_types else settings.n_tweets
+    base_active_types = active_types
+    base_required_types = [t.name.strip() for t in base_active_types]
 
-    generate_task = Task(
-        description=_build_generator_prompt(
-            company_md=company_md,
-            types_md=types_md,
-            n_tweets=effective_n_tweets,
-            recent=recent,
-            required_types=required_types if forced_types else None,
-        ),
-        expected_output="A JSON array of tweet objects.",
-        agent=generator_agent,
-    )
+    def _build_crews(*, recent_context: list[str], active_types: list[TweetType], n_tweets: int) -> tuple[Crew, Crew]:
+        required_types = [t.name.strip() for t in active_types]
+        effective_n_tweets = len(required_types) if forced_types else n_tweets
+        types_md = _format_types_md(active_types)
 
-    review_task = Task(
-        description=_build_review_prompt(n_tweets=effective_n_tweets),
-        expected_output="A JSON array of compliant tweet objects.",
-        agent=reviewer_agent,
-        context=[generate_task],
-    )
+        generate_task = Task(
+            description=_build_generator_prompt(
+                company_md=company_md,
+                types_md=types_md,
+                ideas_md=ideas_md,
+                n_tweets=effective_n_tweets,
+                recent=recent_context,
+                required_types=required_types if forced_types else None,
+            ),
+            expected_output="A JSON array of tweet objects.",
+            agent=generator_agent,
+        )
 
-    quality_task = Task(
-        description=_build_quality_prompt(n_tweets=effective_n_tweets),
-        expected_output="A JSON array of high-quality tweet objects.",
-        agent=quality_agent,
-        context=[review_task],
-    )
+        review_task = Task(
+            description=_build_review_prompt(n_tweets=effective_n_tweets),
+            expected_output="A JSON array of compliant tweet objects.",
+            agent=reviewer_agent,
+            context=[generate_task],
+        )
 
-    post_task = Task(
-        description=_build_post_prompt(),
-        expected_output="A JSON array of tweets ready to queue.",
-        agent=poster_agent,
-        context=[quality_task],
-    )
+        post_task = Task(
+            description=_build_post_prompt(),
+            expected_output="A JSON array of tweets ready to queue.",
+            agent=poster_agent,
+            context=[review_task],
+        )
 
-    crew = Crew(
-        agents=[generator_agent, reviewer_agent, quality_agent, poster_agent],
-        tasks=[generate_task, review_task, quality_task, post_task],
-        process=Process.sequential,
-        verbose=settings.verbose,
-    )
+        crew = Crew(
+            agents=[generator_agent, reviewer_agent, poster_agent],
+            tasks=[generate_task, review_task, post_task],
+            process=Process.sequential,
+            verbose=settings.verbose,
+        )
 
-    review_only_task = Task(
-        description=_build_post_prompt(),
-        expected_output="A JSON array of tweets ready to queue.",
-        agent=poster_agent,
-        context=[review_task],
-    )
+        review_only_task = Task(
+            description=_build_post_prompt(),
+            expected_output="A JSON array of tweets ready to queue.",
+            agent=poster_agent,
+            context=[review_task],
+        )
 
-    review_only_crew = Crew(
-        agents=[generator_agent, reviewer_agent, poster_agent],
-        tasks=[generate_task, review_task, review_only_task],
-        process=Process.sequential,
-        verbose=settings.verbose,
-    )
+        review_only_crew = Crew(
+            agents=[generator_agent, reviewer_agent, poster_agent],
+            tasks=[generate_task, review_task, review_only_task],
+            process=Process.sequential,
+            verbose=settings.verbose,
+        )
+
+        return crew, review_only_crew
 
     last_raw_path = f"{settings.out_dir}/last_raw_output.txt"
+    write_text(last_raw_path, "")
     tweets: list[dict] = []
     max_attempts = 3
+    embedding_disabled = False
 
-    for attempt in range(max_attempts):
-        raw_result = crew.kickoff()
-        raw_str = str(raw_result or "")
-        write_text(last_raw_path, raw_str)
-
-        try:
-            data = parse_tweets_response(raw_str, n_tweets=effective_n_tweets)
-        except ValueError:
-            # fallback to review-only flow if quality stage yields nothing
-            raw_result = review_only_crew.kickoff()
-            raw_str = str(raw_result or "")
-            write_text(last_raw_path, raw_str)
-            try:
-                data = parse_tweets_response(raw_str, n_tweets=effective_n_tweets)
-            except ValueError:
+    def _build_context_limits(force_minimal: bool) -> list[int]:
+        if force_minimal:
+            return [0]
+        limits: list[int] = []
+        for size in [settings.recent_tweets_max, 10, 5, 0]:
+            if size is None:
                 continue
+            size = min(size, len(recent))
+            if size not in limits:
+                limits.append(size)
+        return limits
 
-        required_types = [t.name.strip() for t in active_types]
-        data["tweets"] = _assign_missing_types(data["tweets"], required_types)
+    def _build_n_tweet_levels(force_minimal: bool) -> list[int]:
+        if force_minimal:
+            return [1]
+        levels: list[int] = []
+        for size in [settings.n_tweets, 5, 3, 1]:
+            if size <= 0:
+                continue
+            if size not in levels:
+                levels.append(size)
+        return levels
 
-        max_travel_hack = max(1, effective_n_tweets // 5)
-        allowed_types = {t.name.strip().lower() for t in active_types}
-        type_limits = {t.name.strip().lower(): 1 for t in active_types} if forced_types else None
+    force_minimal = False
 
-        embedding_threshold = (
-            settings.embedding_similarity_threshold
-            if settings.embedding_model_name and (settings.embedding_api_key or settings.openai_api_key)
-            else None
-        )
-        recent_for_embeddings = recent[: settings.embedding_history_max]
-        recent_embeddings = None
-        candidate_embeddings = None
-        candidate_texts = [(t.get("text") or "").strip() for t in data["tweets"] if (t.get("text") or "").strip()]
-        embedding_error = None
-        if embedding_threshold:
-            try:
-                recent_embeddings = _embed_texts(recent_for_embeddings, settings)
-                candidate_embeddings = _build_embedding_map(candidate_texts, settings)
-            except Exception as exc:
-                embedding_error = str(exc)
+    while True:
+        context_limits = _build_context_limits(force_minimal)
+        n_tweet_levels = _build_n_tweet_levels(force_minimal)
+        rate_limit_triggered = False
 
-            write_text(
-                last_raw_path,
-                f"EMBEDDING DEBUG\nrecent={len(recent_for_embeddings)} emb_recent={'yes' if recent_embeddings else 'no'}\n"
-                f"candidates={len(candidate_texts)} emb_candidates={'yes' if candidate_embeddings else 'no'}\n"
-                f"error={embedding_error}\n\n" + raw_str,
-            )
+        for context_limit in context_limits:
+            recent_context = recent[-context_limit:] if context_limit > 0 else []
 
-        tweets = _filter_crewai_tweets(
-            data["tweets"],
-            recent,
-            max_travel_hack=max_travel_hack,
-            allowed_types=allowed_types,
-            type_limits=type_limits,
-            embedding_threshold=embedding_threshold,
-            recent_embeddings=recent_embeddings,
-            candidate_embeddings=candidate_embeddings,
-        )
-        if not tweets:
-            fallback = []
-            for t in data["tweets"]:
-                text = (t.get("text") or "").strip()
-                if not text:
-                    continue
-                if attempt < max_attempts - 1 and _violates_hard_rules(text):
-                    continue
-                if attempt == max_attempts - 1 and _violates_hard_rules(text, strict=False):
-                    continue
-                fallback = [t]
+            for n_tweets in n_tweet_levels:
+                if forced_types:
+                    active_types = base_active_types
+                else:
+                    active_types = base_active_types[: max(1, min(n_tweets, len(base_active_types)))]
+
+                effective_n_tweets = len(active_types) if forced_types else n_tweets
+                _append_text(
+                    last_raw_path,
+                    f"RUN CONTEXT\nforce_minimal={force_minimal}\nrecent_context={len(recent_context)}\n"
+                    f"n_tweets={effective_n_tweets}\nactive_types={','.join([t.name for t in active_types])}\n\n",
+                )
+
+                crew, review_only_crew = _build_crews(
+                    recent_context=recent_context,
+                    active_types=active_types,
+                    n_tweets=effective_n_tweets,
+                )
+
+                for attempt in range(max_attempts):
+                    try:
+                        raw_str = _kickoff_with_retry(crew, fail_fast_on_rate_limit=False)
+                    except _RateLimitHit as exc:
+                        retry_after = _parse_retry_after_seconds(str(exc))
+                        delay = max(retry_after or 0, 60.0)
+                        time.sleep(delay + 0.25)
+                        rate_limit_triggered = True
+                        break
+                    except Exception as exc:
+                        if _is_request_too_large(exc):
+                            break
+                        raise
+
+                    _append_text(last_raw_path, "RAW OUTPUT\n" + raw_str + "\n\n")
+
+                    try:
+                        default_type = active_types[0].name.strip() if active_types else None
+                        data = parse_tweets_response(
+                            raw_str,
+                            n_tweets=effective_n_tweets,
+                            default_tweet_type=default_type,
+                        )
+                    except ValueError:
+                        # fallback to review-only flow if quality stage yields nothing
+                        try:
+                            raw_str = _kickoff_with_retry(review_only_crew, fail_fast_on_rate_limit=False)
+                        except _RateLimitHit as exc:
+                            retry_after = _parse_retry_after_seconds(str(exc))
+                            delay = max(retry_after or 0, 60.0)
+                            time.sleep(delay + 0.25)
+                            rate_limit_triggered = True
+                            break
+                        except Exception as exc:
+                            if _is_request_too_large(exc):
+                                break
+                            raise
+                        _append_text(last_raw_path, "RAW OUTPUT\n" + raw_str + "\n\n")
+                        try:
+                            default_type = active_types[0].name.strip() if active_types else None
+                            data = parse_tweets_response(
+                                raw_str,
+                                n_tweets=effective_n_tweets,
+                                default_tweet_type=default_type,
+                            )
+                        except ValueError:
+                            continue
+
+                    required_types = [t.name.strip() for t in active_types]
+                    data["tweets"] = _assign_missing_types(data["tweets"], required_types)
+                    data["tweets"] = [_normalize_candidate_fields(t) for t in data["tweets"]]
+                    data["tweets"] = [_normalize_candidate_fields(t) for t in data["tweets"]]
+
+                    max_travel_hack = 1
+                    allowed_types = {t.name.strip().lower() for t in active_types}
+                    type_limits = {t.name.strip().lower(): 1 for t in active_types} if forced_types else None
+
+                    embedding_threshold = (
+                        settings.embedding_similarity_threshold
+                        if settings.embedding_model_name and (settings.embedding_api_key or settings.openai_api_key)
+                        else None
+                    )
+                    recent_for_embeddings = recent_context[: settings.embedding_history_max]
+                    recent_embeddings = None
+                    candidate_embeddings = None
+                    candidate_texts = [(t.get("text") or "").strip() for t in data["tweets"] if (t.get("text") or "").strip()]
+                    embedding_error = None
+                    if embedding_threshold and not embedding_disabled:
+                        try:
+                            recent_embeddings = _embed_texts(recent_for_embeddings, settings)
+                            candidate_embeddings = _build_embedding_map(candidate_texts, settings)
+                        except Exception as exc:
+                            embedding_error = str(exc)
+                            if _is_embedding_auth_error(exc):
+                                embedding_disabled = True
+                                embedding_error += " (embedding disabled)"
+
+                        _append_text(
+                            last_raw_path,
+                            f"EMBEDDING DEBUG\nrecent={len(recent_for_embeddings)} emb_recent={'yes' if recent_embeddings else 'no'}\n"
+                            f"candidates={len(candidate_texts)} emb_candidates={'yes' if candidate_embeddings else 'no'}\n"
+                            f"error={embedding_error}\n\n",
+                        )
+
+                    tweets = _filter_crewai_tweets(
+                        data["tweets"],
+                        recent,
+                        max_travel_hack=max_travel_hack,
+                        allowed_types=allowed_types,
+                        type_limits=type_limits,
+                        embedding_threshold=embedding_threshold,
+                        recent_embeddings=recent_embeddings,
+                        candidate_embeddings=candidate_embeddings,
+                    )
+                    if not tweets:
+                        fallback = []
+                        for t in data["tweets"]:
+                            if _accept_relaxed_candidate(t, allowed_types=allowed_types, type_limits=type_limits):
+                                fallback = [t]
+                                break
+                        tweets = fallback
+
+                    if tweets:
+                        tweets = _filter_crewai_tweets(
+                            tweets,
+                            recent,
+                            max_travel_hack=max_travel_hack,
+                            allowed_types=allowed_types,
+                            type_limits=type_limits,
+                            embedding_threshold=None,
+                            recent_embeddings=None,
+                            candidate_embeddings=None,
+                        )
+
+                    if tweets:
+                        break
+
+                if tweets or rate_limit_triggered:
+                    break
+
+            if tweets or rate_limit_triggered:
                 break
-            tweets = fallback
 
         if tweets:
             break
+        if rate_limit_triggered and not force_minimal:
+            force_minimal = True
+            continue
+        break
 
     if not tweets:
         return
@@ -764,7 +1281,29 @@ def run_generate_tweets_crewai() -> None:
     timestamp = now_timestamp()
     out_queue_path = f"{settings.out_dir}/post_queue_{timestamp}.json"
 
-    payload = {"tweets": tweets[:effective_n_tweets]}
+    output_candidates = tweets[: min(effective_n_tweets, 5)]
+    seen_buckets: set[str] = set()
+    seen_types: set[str] = set()
+    deduped_output: list[dict] = []
+    for t in output_candidates:
+        tags = t.get("tags") if isinstance(t.get("tags"), list) else []
+        text = t.get("text", "")
+        bucket = _extract_bucket(text, tags) or _infer_bucket_from_text(text)
+        t_type = (t.get("tweet_type") or "").strip().lower()
+        if bucket and bucket in seen_buckets:
+            continue
+        if t_type and t_type in seen_types:
+            continue
+        if bucket:
+            seen_buckets.add(bucket)
+        if t_type:
+            seen_types.add(t_type)
+        deduped_output.append(t)
+
+    if not deduped_output and output_candidates:
+        deduped_output = [output_candidates[0]]
+
+    payload = {"tweets": deduped_output}
     write_json(out_queue_path, {"queue": payload["tweets"]})
 
     history_path = f"{settings.out_dir}/history.jsonl"
