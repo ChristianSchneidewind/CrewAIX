@@ -36,6 +36,7 @@ class Settings:
     embedding_api_key: str | None = None
     embedding_similarity_threshold: float = 0.85
     embedding_history_max: int = 30
+    embedding_cache_path: str | None = None
 
     # Optional: force specific tweet types per run
     forced_tweet_types: tuple[str, ...] = field(default_factory=tuple)
@@ -80,6 +81,10 @@ def load_settings() -> Settings:
         _get_env("EMBEDDING_SIMILARITY_THRESHOLD", "0.85") or "0.85"
     )
     embedding_history_max = int(_get_env("EMBEDDING_HISTORY_MAX", "30") or "30")
+    embedding_cache_path = _get_env(
+        "EMBEDDING_CACHE_PATH",
+        f"{out_dir}/embeddings.sqlite",
+    )
 
     # Optional knobs
     n_tweets = int(_get_env("N_TWEETS", "10") or "10")
@@ -127,6 +132,7 @@ def load_settings() -> Settings:
         embedding_api_key=embedding_api_key,
         embedding_similarity_threshold=embedding_similarity_threshold,
         embedding_history_max=embedding_history_max,
+        embedding_cache_path=embedding_cache_path,
         forced_tweet_types=forced_tweet_types,
         log_json=log_json,
         log_dir=log_dir,
