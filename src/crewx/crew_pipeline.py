@@ -195,9 +195,13 @@ def _build_crews(
     return crew, review_only_crew
 
 
-def run_generate_tweets_crewai() -> dict:
+def run_generate_tweets_crewai(
+    settings=None,
+    *,
+    dry_run: bool = False,
+) -> dict:
     apply_litellm_env()
-    settings = load_settings()
+    settings = settings or load_settings()
     ensure_dir(settings.out_dir)
     run_id = f"{now_timestamp()}_{uuid4().hex[:8]}"
     setup_logging(
@@ -569,8 +573,11 @@ def run_generate_tweets_crewai() -> dict:
         deduped_output = [output_candidates[0]]
 
     payload = {"tweets": deduped_output}
-    write_json(out_queue_path, {"queue": payload["tweets"]})
-    pipeline_logger.info("Wrote post queue: %s", out_queue_path)
+    if not dry_run:
+        write_json(out_queue_path, {"queue": payload["tweets"]})
+        pipeline_logger.info("Wrote post queue: %s", out_queue_path)
+    else:
+        pipeline_logger.info("Dry run: skipped writing post queue: %s", out_queue_path)
     log_event(
         pipeline_logger,
         "run_metrics",
@@ -582,11 +589,13 @@ def run_generate_tweets_crewai() -> dict:
         output=len(deduped_output),
         fallback_used=fallback_used,
         out_queue_path=out_queue_path,
+        dry_run=dry_run,
     )
 
     history_path = f"{settings.out_dir}/history.jsonl"
-    for t in payload["tweets"]:
-        append_jsonl(history_path, t)
+    if not dry_run:
+        for t in payload["tweets"]:
+            append_jsonl(history_path, t)
 
     log_event(
         pipeline_logger,
@@ -594,6 +603,13 @@ def run_generate_tweets_crewai() -> dict:
         run_id=run_id,
         history_path=history_path,
         output_count=len(payload["tweets"]),
+        dry_run=dry_run,
     )
 
-    return payload
+    return {
+        "run_id": run_id,
+        "out_queue_path": out_queue_path,
+        "history_path": history_path,
+        "output_count": len(payload["tweets"]),
+        "dry_run": dry_run,
+    }
