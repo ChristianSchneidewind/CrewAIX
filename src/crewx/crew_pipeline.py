@@ -11,6 +11,7 @@ from crewai import Agent, Crew, Process, Task
 
 from crewx.config import apply_litellm_env, load_settings
 from crewx.embeddings import build_embedding_map, embed_texts, is_embedding_auth_error
+from crewx.errors import NoTweetsGeneratedError, NoTweetTypesError, RateLimitError
 from crewx.filters import (
     accept_relaxed_candidate,
     assign_missing_types,
@@ -198,7 +199,7 @@ def run_generate_tweets_crewai(
     settings=None,
     *,
     dry_run: bool = False,
-) -> dict | None:
+) -> dict:
     apply_litellm_env()
     settings = settings or load_settings()
     ensure_dir(settings.out_dir)
@@ -233,7 +234,7 @@ def run_generate_tweets_crewai(
 
     all_types = parse_tweet_types_md(types_md)
     if not all_types:
-        raise RuntimeError(f"No tweet types found in {settings.tweet_types_md_path}")
+        raise NoTweetTypesError(f"No tweet types found in {settings.tweet_types_md_path}")
 
     forced_types = [t.strip().lower() for t in settings.forced_tweet_types if t.strip()]
     if forced_types:
@@ -542,7 +543,9 @@ def run_generate_tweets_crewai(
 
     if not tweets:
         pipeline_logger.warning("No tweets produced")
-        return None
+        if rate_limit_hits:
+            raise RateLimitError("No tweets produced after rate-limit retries")
+        raise NoTweetsGeneratedError("No tweets produced")
 
     timestamp = now_timestamp()
     out_queue_path = f"{settings.out_dir}/post_queue_{timestamp}.json"

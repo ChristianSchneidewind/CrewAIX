@@ -9,10 +9,17 @@ from typing import cast
 
 from crewx.config import Settings, load_settings
 from crewx.crew_pipeline import fix_history_unknown_types, run_generate_tweets_crewai
+from crewx.errors import (
+    ConfigurationError,
+    CrewXError,
+    NoTweetsGeneratedError,
+    RateLimitError,
+)
 
 EXIT_OK = 0
 EXIT_CONFIG_ERROR = 2
 EXIT_NO_TWEETS = 3
+EXIT_RATE_LIMIT = 4
 EXIT_UNKNOWN_ERROR = 1
 
 
@@ -190,8 +197,6 @@ def main() -> int:
     if args.command == "run":
         settings = _apply_run_overrides(load_settings(), args)
         result = run_generate_tweets_crewai(settings, dry_run=args.dry_run)
-        if result is None:
-            _exit_with_error(EXIT_NO_TWEETS, "No tweets generated")
         result_data = cast(dict[str, object], result)
         print(
             _format_run_output(
@@ -209,6 +214,14 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
+    except ConfigurationError as exc:
+        _exit_with_error(EXIT_CONFIG_ERROR, f"Config error: {exc}")
+    except RateLimitError as exc:
+        _exit_with_error(EXIT_RATE_LIMIT, f"Rate limit: {exc}")
+    except NoTweetsGeneratedError as exc:
+        _exit_with_error(EXIT_NO_TWEETS, f"No tweets generated: {exc}")
+    except CrewXError as exc:
+        _exit_with_error(EXIT_UNKNOWN_ERROR, f"CrewX error: {exc}")
     except ValueError as exc:
         _exit_with_error(EXIT_CONFIG_ERROR, f"Config error: {exc}")
     except Exception as exc:
