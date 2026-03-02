@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Iterable
+from collections.abc import Iterable
 
 from litellm import embedding as litellm_embedding
 
@@ -16,7 +16,7 @@ def cosine_similarity(a: Iterable[float], b: Iterable[float]) -> float:
     b_list = list(b)
     if not a_list or not b_list or len(a_list) != len(b_list):
         return 0.0
-    dot = sum(x * y for x, y in zip(a_list, b_list))
+    dot = sum(x * y for x, y in zip(a_list, b_list, strict=True))
     norm_a = math.sqrt(sum(x * x for x in a_list))
     norm_b = math.sqrt(sum(y * y for y in b_list))
     if norm_a == 0 or norm_b == 0:
@@ -43,7 +43,10 @@ def embed_texts(texts: list[str], settings) -> list[list[float]]:
     elif isinstance(response, list):
         data = response
     elif isinstance(response, dict) and isinstance(response.get("embedding"), list):
-        return [response.get("embedding")]
+        embedding = response.get("embedding")
+        if isinstance(embedding, list):
+            if all(isinstance(value, int | float) for value in embedding):
+                return [[float(value) for value in embedding]]
     else:
         response_data = getattr(response, "data", None)
         if isinstance(response_data, list):
@@ -60,8 +63,8 @@ def embed_texts(texts: list[str], settings) -> list[list[float]]:
     embeddings: list[list[float]] = []
     for item in data:
         emb = item.get("embedding") if isinstance(item, dict) else None
-        if isinstance(emb, list):
-            embeddings.append(emb)
+        if isinstance(emb, list) and all(isinstance(value, int | float) for value in emb):
+            embeddings.append([float(value) for value in emb])
     if not embeddings:
         raise ValueError("No embeddings parsed")
     return embeddings
@@ -69,8 +72,10 @@ def embed_texts(texts: list[str], settings) -> list[list[float]]:
 
 def build_embedding_map(texts: list[str], settings) -> dict[str, list[float]]:
     embeddings = embed_texts(texts, settings)
+    if len(embeddings) != len(texts):
+        raise ValueError("Embedding count mismatch")
     mapping: dict[str, list[float]] = {}
-    for text, emb in zip(texts, embeddings):
+    for text, emb in zip(texts, embeddings, strict=True):
         if text and text not in mapping:
             mapping[text] = emb
     if not mapping:

@@ -24,7 +24,14 @@ KEYWORD_QUOTAS = {
         "max_per_batch": 1,
     },
     "connections": {
-        "needles": ["umsteig", "umsteigezeit", "umsteigezeiten", "anschlussflug", "zubringer", "puffer"],
+        "needles": [
+            "umsteig",
+            "umsteigezeit",
+            "umsteigezeiten",
+            "anschlussflug",
+            "zubringer",
+            "puffer",
+        ],
         "max_per_batch": 1,
     },
     "eu261": {
@@ -99,16 +106,72 @@ TOPIC_KEYWORDS = [
 ]
 
 TOPIC_BUCKETS = {
-    "boarding_gate": ["boarding", "gate", "einsteigen", "boarden", "boarding-gruppe", "boardinggruppe"],
-    "gepaeck_handgepaeck": ["gepäck", "gepaeck", "handgepäck", "handgepaeck", "koffer", "gepäckband"],
-    "gepaeckverlust": ["gepäckverlust", "gepaeckverlust", "gepäck verspätet", "gepaeck verspätet", "verloren", "beschädigt"],
-    "checkin_sitzplatz": ["check-in", "checkin", "sitzplatz", "sitz", "boardingpass", "mobile boarding"],
-    "anschlussflug": ["anschlussflug", "zubringer", "umsteig", "umsteigen", "connection", "transit"],
+    "boarding_gate": [
+        "boarding",
+        "gate",
+        "einsteigen",
+        "boarden",
+        "boarding-gruppe",
+        "boardinggruppe",
+    ],
+    "gepaeck_handgepaeck": [
+        "gepäck",
+        "gepaeck",
+        "handgepäck",
+        "handgepaeck",
+        "koffer",
+        "gepäckband",
+    ],
+    "gepaeckverlust": [
+        "gepäckverlust",
+        "gepaeckverlust",
+        "gepäck verspätet",
+        "gepaeck verspätet",
+        "verloren",
+        "beschädigt",
+    ],
+    "checkin_sitzplatz": [
+        "check-in",
+        "checkin",
+        "sitzplatz",
+        "sitz",
+        "boardingpass",
+        "mobile boarding",
+    ],
+    "anschlussflug": [
+        "anschlussflug",
+        "zubringer",
+        "umsteig",
+        "umsteigen",
+        "connection",
+        "transit",
+    ],
     "wetter_irrops": ["wetter", "sturm", "schnee", "gewitter", "nebel", "vereisung"],
     "streik": ["streik", "arbeitskampf", "gewerkschaft"],
-    "codeshare": ["codeshare", "code-share", "allianz", "operating carrier", "durchführende airline"],
-    "sicherheit": ["sicherheitskontrolle", "security", "flughafensicherheit", "kontrolle", "flüssigkeiten", "liquids"],
-    "reiseruecktritt_kulanz": ["reiserücktritt", "reiseruecktritt", "storno", "umbuchung", "erstattung", "gutschein", "kulanz"],
+    "codeshare": [
+        "codeshare",
+        "code-share",
+        "allianz",
+        "operating carrier",
+        "durchführende airline",
+    ],
+    "sicherheit": [
+        "sicherheitskontrolle",
+        "security",
+        "flughafensicherheit",
+        "kontrolle",
+        "flüssigkeiten",
+        "liquids",
+    ],
+    "reiseruecktritt_kulanz": [
+        "reiserücktritt",
+        "reiseruecktritt",
+        "storno",
+        "umbuchung",
+        "erstattung",
+        "gutschein",
+        "kulanz",
+    ],
     "vielflieger": ["vielflieger", "status", "meilen", "bonusprogramm", "frequent flyer"],
     "betreuung": ["betreuung", "verpflegung", "hotel", "transfer", "ersatzbeförderung"],
 }
@@ -239,7 +302,9 @@ def contains_brand_or_cta(text: str, tags: list[str] | None) -> bool:
         return True
     if any(term in lower for term in CTA_TERMS):
         return True
-    if any(term.replace("#", "").strip() in tag_values for term in BRAND_TERMS if term.startswith("#")):
+    if any(
+        term.replace("#", "").strip() in tag_values for term in BRAND_TERMS if term.startswith("#")
+    ):
         return True
     if "flugninja" in tag_values:
         return True
@@ -312,7 +377,12 @@ def violates_hard_rules(text: str, *, strict: bool = True) -> bool:
     if "drei stunden" in lower_text:
         return True
 
-    if "eu-verordnung 261/2004" in lower_text or "verordnung 261/2004" in lower_text or "eu261" in lower_text or "eu-261" in lower_text:
+    if (
+        "eu-verordnung 261/2004" in lower_text
+        or "verordnung 261/2004" in lower_text
+        or "eu261" in lower_text
+        or "eu-261" in lower_text
+    ):
         return True
 
     if "bis zu 600" in lower_text or "600 €" in lower_text or "600€" in lower_text:
@@ -324,7 +394,11 @@ def violates_hard_rules(text: str, *, strict: bool = True) -> bool:
         return True
     if "e-mail" in lower_text or "email" in lower_text or "sms" in lower_text:
         return True
-    if "buchungsbestätigung" in lower_text or "buchungsdetails" in lower_text or "nachrichten der airline" in lower_text:
+    if (
+        "buchungsbestätigung" in lower_text
+        or "buchungsdetails" in lower_text
+        or "nachrichten der airline" in lower_text
+    ):
         return True
     if "umsteigezeit" in lower_text or "umsteigezeiten" in lower_text or "umsteig" in lower_text:
         return True

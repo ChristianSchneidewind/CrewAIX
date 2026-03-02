@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
-from pathlib import Path
 import re
 import sys
+from datetime import datetime
+from pathlib import Path
 
 IDEA_LINE_RE = re.compile(r"^\s*\d+\.\s+\"([^\"]+)\"")
 
@@ -18,7 +18,9 @@ def _find_default_source_dir() -> Path:
 
     tmp_root = Path("/tmp")
     if tmp_root.exists():
-        tmp_matches = sorted(tmp_root.glob("skills-*/tweet-ideas"), key=lambda p: p.stat().st_mtime, reverse=True)
+        tmp_matches = sorted(
+            tmp_root.glob("skills-*/tweet-ideas"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
         for match in tmp_matches:
             if match.exists() and match.is_dir():
                 return match
@@ -37,7 +39,14 @@ def _find_latest_file(source_dir: Path) -> Path:
 
 BUCKET_KEYWORDS = {
     "boarding_gate": ["boarding", "gate", "einsteigen", "boarden", "boarding-gruppe"],
-    "gepaeck_handgepaeck": ["gepäck", "gepaeck", "handgepäck", "handgepaeck", "koffer", "gepäckband"],
+    "gepaeck_handgepaeck": [
+        "gepäck",
+        "gepaeck",
+        "handgepäck",
+        "handgepaeck",
+        "koffer",
+        "gepäckband",
+    ],
     "gepaeckverlust": ["gepäckverlust", "gepaeckverlust", "verloren", "beschädigt", "beschädigung"],
     "checkin_sitzplatz": ["check-in", "checkin", "sitzplatz", "boardingpass"],
     "anschlussflug": ["anschlussflug", "umsteigen", "zubringer", "umsteig"],
@@ -45,7 +54,14 @@ BUCKET_KEYWORDS = {
     "streik": ["streik", "arbeitskampf", "gewerkschaft"],
     "codeshare": ["codeshare", "code-share", "ausführende airline", "durchführende airline"],
     "sicherheit": ["sicherheitskontrolle", "security", "flüssig", "laptop"],
-    "reiseruecktritt_kulanz": ["reiserücktritt", "reiseruecktritt", "storno", "umbuch", "erstattung", "kulanz"],
+    "reiseruecktritt_kulanz": [
+        "reiserücktritt",
+        "reiseruecktritt",
+        "storno",
+        "umbuch",
+        "erstattung",
+        "kulanz",
+    ],
     "vielflieger": ["vielflieger", "status", "meilen", "bonusprogramm"],
     "betreuung": ["betreuung", "verpflegung", "hotel", "transfer", "ersatzbeförderung"],
 }
@@ -86,7 +102,7 @@ def _balance_ideas(ideas: list[str], *, limit: int) -> list[str]:
             misc.append(idea)
 
     balanced: list[str] = []
-    for bucket, items in buckets.items():
+    for _bucket, items in buckets.items():
         balanced.extend(items[:per_bucket])
 
     if len(balanced) < limit:
@@ -139,7 +155,15 @@ def main() -> int:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     limited = _balance_ideas(ideas, limit=max(1, args.limit))
 
-    content = ["# Tweet Ideas", "", f"**Generated:** {timestamp}", f"**Source:** {source_path}", "", "---", ""]
+    content = [
+        "# Tweet Ideas",
+        "",
+        f"**Generated:** {timestamp}",
+        f"**Source:** {source_path}",
+        "",
+        "---",
+        "",
+    ]
     content.extend([f"- {idea}" for idea in limited])
     content.append("")
 

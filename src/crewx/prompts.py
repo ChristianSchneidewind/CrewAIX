@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from textwrap import dedent
-from typing import Iterable, Sequence
 
 from crewx.parsing import TweetType
 
@@ -162,4 +162,3 @@ def build_generation_prompt(
             + "\n---\n"
         )
     return prompt
-

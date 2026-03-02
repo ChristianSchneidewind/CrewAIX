@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 import json
-import time
 import logging
 import re
+import time
+from pathlib import Path
 
 from crewai import Agent, Crew, Process, Task
 
@@ -36,12 +36,11 @@ from crewx.prompts_pipeline import (
 )
 from crewx.retry import (
     RateLimitHit,
-    kickoff_with_retry,
     is_request_too_large,
+    kickoff_with_retry,
     parse_retry_after_seconds,
 )
 from crewx.rules import extract_bucket, infer_bucket_from_text
-
 
 LOGGER_NAME = "crewx.pipeline"
 
@@ -235,24 +234,30 @@ def run_generate_tweets_crewai() -> None:
 
     generator_agent = Agent(
         role=generator_role.get("role") or "Tweet Generator",
-        goal=generator_role.get("goal") or "Generate varied German tweets that follow the provided constraints.",
-        backstory=generator_role.get("backstory") or "You are an expert social media writer for travel and passenger rights.",
+        goal=generator_role.get("goal")
+        or "Generate varied German tweets that follow the provided constraints.",
+        backstory=generator_role.get("backstory")
+        or "You are an expert social media writer for travel and passenger rights.",
         llm=llm,
         verbose=settings.verbose,
     )
 
     reviewer_agent = Agent(
         role=reviewer_role.get("role") or "X Compliance Reviewer",
-        goal=reviewer_role.get("goal") or "Ensure tweets comply with X constraints and style rules.",
-        backstory=reviewer_role.get("backstory") or "You are a strict reviewer who fixes or removes non-compliant tweets.",
+        goal=reviewer_role.get("goal")
+        or "Ensure tweets comply with X constraints and style rules.",
+        backstory=reviewer_role.get("backstory")
+        or "You are a strict reviewer who fixes or removes non-compliant tweets.",
         llm=llm,
         verbose=settings.verbose,
     )
 
     poster_agent = Agent(
         role=poster_role.get("role") or "Tweet Poster",
-        goal=poster_role.get("goal") or "Prepare final tweets for the posting queue without altering content.",
-        backstory=poster_role.get("backstory") or "You only prepare a queue; you never call external APIs.",
+        goal=poster_role.get("goal")
+        or "Prepare final tweets for the posting queue without altering content.",
+        backstory=poster_role.get("backstory")
+        or "You only prepare a queue; you never call external APIs.",
         llm=llm,
         verbose=settings.verbose,
     )
@@ -302,7 +307,9 @@ def run_generate_tweets_crewai() -> None:
                 if forced_types:
                     active_types = base_active_types
                 else:
-                    active_types = base_active_types[: max(1, min(n_tweets, len(base_active_types)))]
+                    active_types = base_active_types[
+                        : max(1, min(n_tweets, len(base_active_types)))
+                    ]
 
                 effective_n_tweets = len(active_types) if forced_types else n_tweets
                 pipeline_logger.info(
@@ -331,9 +338,11 @@ def run_generate_tweets_crewai() -> None:
                     n_tweets=effective_n_tweets,
                 )
 
-                for attempt in range(max_attempts):
+                for _attempt in range(max_attempts):
                     try:
-                        raw_str = kickoff_with_retry(crew, fail_fast_on_rate_limit=True, debug_path=last_raw_path)
+                        raw_str = kickoff_with_retry(
+                            crew, fail_fast_on_rate_limit=True, debug_path=last_raw_path
+                        )
                     except RateLimitHit as exc:
                         retry_after = parse_retry_after_seconds(str(exc))
                         delay = max(retry_after or 0, 60.0)
@@ -343,7 +352,9 @@ def run_generate_tweets_crewai() -> None:
                         break
                     except Exception as exc:
                         if is_request_too_large(exc):
-                            pipeline_logger.warning("Request too large; retrying with smaller context")
+                            pipeline_logger.warning(
+                                "Request too large; retrying with smaller context"
+                            )
                             break
                         raise
 
@@ -366,13 +377,17 @@ def run_generate_tweets_crewai() -> None:
                         except RateLimitHit as exc:
                             retry_after = parse_retry_after_seconds(str(exc))
                             delay = max(retry_after or 0, 60.0)
-                            pipeline_logger.warning("Rate limit hit. Sleeping for %s seconds.", delay)
+                            pipeline_logger.warning(
+                                "Rate limit hit. Sleeping for %s seconds.", delay
+                            )
                             time.sleep(delay + 0.25)
                             rate_limit_triggered = True
                             break
                         except Exception as exc:
                             if is_request_too_large(exc):
-                                pipeline_logger.warning("Request too large; retrying with smaller context")
+                                pipeline_logger.warning(
+                                    "Request too large; retrying with smaller context"
+                                )
                                 break
                             raise
                         _append_text(last_raw_path, "RAW OUTPUT\n" + raw_str + "\n\n")
@@ -392,17 +407,24 @@ def run_generate_tweets_crewai() -> None:
 
                     max_travel_hack = 1
                     allowed_types = {t.name.strip().lower() for t in active_types}
-                    type_limits = {t.name.strip().lower(): 1 for t in active_types} if forced_types else None
+                    type_limits = (
+                        {t.name.strip().lower(): 1 for t in active_types} if forced_types else None
+                    )
 
                     embedding_threshold = (
                         settings.embedding_similarity_threshold
-                        if settings.embedding_model_name and (settings.embedding_api_key or settings.openai_api_key)
+                        if settings.embedding_model_name
+                        and (settings.embedding_api_key or settings.openai_api_key)
                         else None
                     )
                     recent_for_embeddings = recent_context[: settings.embedding_history_max]
                     recent_embeddings = None
                     candidate_embeddings = None
-                    candidate_texts = [(t.get("text") or "").strip() for t in data["tweets"] if (t.get("text") or "").strip()]
+                    candidate_texts = [
+                        (t.get("text") or "").strip()
+                        for t in data["tweets"]
+                        if (t.get("text") or "").strip()
+                    ]
                     embedding_error = None
                     if embedding_threshold and not embedding_disabled:
                         try:
@@ -435,7 +457,9 @@ def run_generate_tweets_crewai() -> None:
                     if not tweets:
                         fallback = []
                         for t in data["tweets"]:
-                            if accept_relaxed_candidate(t, allowed_types=allowed_types, type_limits=type_limits):
+                            if accept_relaxed_candidate(
+                                t, allowed_types=allowed_types, type_limits=type_limits
+                            ):
                                 fallback = [t]
                                 break
                         tweets = fallback
