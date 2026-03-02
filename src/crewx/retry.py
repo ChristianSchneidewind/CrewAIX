@@ -23,7 +23,9 @@ def is_request_too_large(exc: Exception) -> bool:
 
 def is_connection_error(exc: Exception) -> bool:
     message = str(exc).lower()
-    return "connection error" in message or "no route to host" in message or "connecterror" in message
+    return (
+        "connection error" in message or "no route to host" in message or "connecterror" in message
+    )
 
 
 def parse_retry_after_seconds(message: str) -> float | None:
@@ -60,7 +62,7 @@ def kickoff_with_retry(
         except Exception as exc:
             if is_rate_limit_error(exc):
                 if fail_fast_on_rate_limit:
-                    raise RateLimitHit(str(exc))
+                    raise RateLimitHit(str(exc)) from exc
                 if attempt < max_retries:
                     message = str(exc)
                     retry_after = parse_retry_after_seconds(message)
