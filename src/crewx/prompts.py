@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from textwrap import dedent
-from typing import Iterable, Sequence
 
 from crewx.parsing import TweetType
 
@@ -30,7 +30,8 @@ def tweet_task_prompt_for_type(
     style_block = _bullets(tt.style) if tt.style else "(no style rules)"
     rules_block = _bullets(tt.rules) if tt.rules else "(no extra rules)"
 
-    return dedent(f"""
+    return dedent(
+        f"""
         You write German tweets for the company described below.
 
         Output MUST be in CrewAI final answer format.
@@ -135,7 +136,8 @@ def tweet_task_prompt_for_type(
         IF YOU CANNOT FOLLOW THESE RULES, OUTPUT:
         Final Answer: []
         DO NOT WRITE ANY OTHER TEXT OUTSIDE OF "Final Answer:" + JSON.
-        """).strip()
+        """
+    ).strip()
 
 
 def build_generation_prompt(

@@ -212,9 +212,7 @@ def filter_crewai_tweets(
                 continue
             needles = [str(n) for n in needles]
             if any(n in text.lower() for n in needles):
-                batch_hits = count_keyword_hits(
-                    [u.get("text", "") for u in filtered], needles
-                )
+                batch_hits = count_keyword_hits([u.get("text", "") for u in filtered], needles)
                 recent_hits = count_keyword_hits(recent_scope, needles)
                 history_limit = KEYWORD_HISTORY_LIMITS.get(key)
                 if history_limit is not None and not isinstance(history_limit, int):

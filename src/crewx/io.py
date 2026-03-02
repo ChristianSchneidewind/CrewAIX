@@ -72,9 +72,7 @@ def list_recent_tweet_texts(out_dir: str, *, limit: int) -> list[str]:
         return texts
 
     # fallback to tweets_*.json files (newest first)
-    json_files = sorted(
-        p.glob("tweets_*.json"), key=lambda x: x.stat().st_mtime, reverse=True
-    )
+    json_files = sorted(p.glob("tweets_*.json"), key=lambda x: x.stat().st_mtime, reverse=True)
     for jf in json_files:
         if len(texts) >= limit:
             break

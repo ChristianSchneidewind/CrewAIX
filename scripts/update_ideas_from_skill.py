@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
-from pathlib import Path
 import re
 import sys
+from datetime import datetime
+from pathlib import Path
 
 IDEA_LINE_RE = re.compile(r"^\s*\d+\.\s+\"([^\"]+)\"")
 
@@ -115,7 +115,7 @@ def _balance_ideas(ideas: list[str], *, limit: int) -> list[str]:
             misc.append(idea)
 
     balanced: list[str] = []
-    for bucket, items in buckets.items():
+    for _bucket, items in buckets.items():
         balanced.extend(items[:per_bucket])
 
     if len(balanced) < limit:

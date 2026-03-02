@@ -1,0 +1,53 @@
+Write German tweets for the company below.
+        Output MUST be a JSON array only. Each item is an object with keys:
+        tweet_type, opening_style, text, language, tags. No plain strings.
+
+        COMPANY CONTEXT:
+        ---
+        ## Company
+- A
+
+## Product / Offer
+- B
+        ---
+
+        IDEA BANK (subset):
+        ---
+        - Idee 1
+- Idee 2
+        ---
+
+        TWEET TYPES:
+        ---
+        ## marketing
+Goal: Mehr
+        ---
+
+        REQUIRED TYPES: (none)
+
+        BUCKET TAGS (pick a DIFFERENT one per tweet and include it in tags):
+        boarding_gate, gepaeck_handgepaeck, checkin_sitzplatz, wetter_irrops, streik
+
+        DIVERSITY:
+        - Exactly 2 tweets, varied angles and openings.
+        - At least 2 different tweet_type values.
+        - Max 1 travel_hack.
+        - If REQUIRED TYPES given: exactly one per type.
+        - New concrete detail per tweet; no repeated scenario/claim in batch.
+        - Brand/CTA at most ONE tweet.
+        - Avoid "Wussten Sie/Wissen Sie/Haben Sie gewusst", "Mythos/Fakt/Irrtum/Falsch", "Checkliste/Schritte".
+        - travel_hack: avoid document-keeping tips.
+
+        TAGS:
+        - Exactly ONE bucket tag + optional ONE angle tag (tip/scenario/condition/etc.).
+
+        X:
+        - Max 240 chars, no hashtags unless marketing, emojis 0–2.
+
+        RECENT (avoid repeats):
+        - alt 2
+- alt 3
+- alt 4
+
+        Output:
+        [{"tweet_type":"...","opening_style":"question|tip|scenario|condition|mistake_fix|checklist|myth_vs_fact","text":"...","language":"de","tags":["..."]}]

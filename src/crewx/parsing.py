@@ -104,9 +104,7 @@ def _extract_first_json_object(raw: str) -> str | None:
             pass
 
     # Helper to scan for first valid JSON by delimiter
-    def _scan_for_valid_segment(
-        text: str, open_char: str, close_char: str
-    ) -> str | None:
+    def _scan_for_valid_segment(text: str, open_char: str, close_char: str) -> str | None:
         start = text.find(open_char)
         if start == -1:
             return None
@@ -166,9 +164,7 @@ def parse_tweets_response(
     except json.JSONDecodeError as e:
         # Give a slightly more helpful error including a snippet
         snippet = json_str[:200].replace("\n", " ")
-        raise ValueError(
-            f"Invalid JSON in model output: {e} | snippet: {snippet!r}"
-        ) from e
+        raise ValueError(f"Invalid JSON in model output: {e} | snippet: {snippet!r}") from e
 
     # Accept either a plain list of tweets OR an object with "tweets" key
     if isinstance(data, list):

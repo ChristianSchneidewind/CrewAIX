@@ -90,9 +90,7 @@ def extract_bucket(text: str, tags: list[str] | None) -> str | None:
 
 def contains_brand_or_cta(text: str, tags: list[str] | None) -> bool:
     lower = (text or "").lower()
-    tag_values = [
-        str(t).strip().lower().lstrip("#") for t in (tags or []) if str(t).strip()
-    ]
+    tag_values = [str(t).strip().lower().lstrip("#") for t in (tags or []) if str(t).strip()]
 
     if URL_PATTERN.search(lower):
         return True
@@ -101,9 +99,7 @@ def contains_brand_or_cta(text: str, tags: list[str] | None) -> bool:
     if any(term in lower for term in CTA_TERMS):
         return True
     if any(
-        term.replace("#", "").strip() in tag_values
-        for term in BRAND_TERMS
-        if term.startswith("#")
+        term.replace("#", "").strip() in tag_values for term in BRAND_TERMS if term.startswith("#")
     ):
         return True
     if "flugninja" in tag_values:
@@ -180,9 +176,7 @@ def violates_hard_rules(text: str, *, strict: bool = True) -> bool:
     if any(p in lower_text for p in _as_list(_rules.get("forbidden_legal_claims"))):
         return True
 
-    if any(
-        p in lower_text for p in _as_list(_rules.get("forbidden_compensation_claims"))
-    ):
+    if any(p in lower_text for p in _as_list(_rules.get("forbidden_compensation_claims"))):
         return True
 
     if any(p in lower_text for p in _as_list(_rules.get("forbidden_patterns"))):

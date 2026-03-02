@@ -13,4 +13,38 @@ dependencies = [
     "pyyaml>=6.0.0",
     "types-PyYAML>=6.0.0.20240106",
     "atproto>=0.0.56",
+    "pytest>=9.0.2",
 ]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0.0"]
+lint = ["black>=24.0.0", "ruff>=0.5.0", "mypy>=1.10.0", "pre-commit>=3.7.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["crewx"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_configs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_return_any = true
+no_implicit_optional = true
+strict_equality = true
+ignore_missing_imports = true

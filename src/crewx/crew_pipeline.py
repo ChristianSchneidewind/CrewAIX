@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 import json
-import time
 import logging
 import re
+import time
+from pathlib import Path
 
 from crewai import Agent, Crew, Process, Task
 
@@ -36,8 +36,8 @@ from crewx.prompts_pipeline import (
 )
 from crewx.retry import (
     RateLimitHit,
-    kickoff_with_retry,
     is_request_too_large,
+    kickoff_with_retry,
     parse_retry_after_seconds,
 )
 from crewx.rules import extract_bucket, infer_bucket_from_text
@@ -216,15 +216,11 @@ def run_generate_tweets_crewai() -> None:
 
     forced_types = [t.strip().lower() for t in settings.forced_tweet_types if t.strip()]
     if forced_types:
-        active_types = [
-            t for t in all_types if t.name.strip().lower() in set(forced_types)
-        ]
+        active_types = [t for t in all_types if t.name.strip().lower() in set(forced_types)]
     else:
         max_types = min(settings.n_tweets, len(all_types))
         start_idx = _rotation_start_index(settings.out_dir, total_types=len(all_types))
-        active_types = [
-            all_types[(start_idx + i) % len(all_types)] for i in range(max_types)
-        ]
+        active_types = [all_types[(start_idx + i) % len(all_types)] for i in range(max_types)]
         forced_types = [t.name.strip().lower() for t in active_types]
 
     fix_history_unknown_types(settings.out_dir, fallback_type="educational")
@@ -342,7 +338,7 @@ def run_generate_tweets_crewai() -> None:
                     n_tweets=effective_n_tweets,
                 )
 
-                for attempt in range(max_attempts):
+                for _attempt in range(max_attempts):
                     try:
                         raw_str = kickoff_with_retry(
                             crew, fail_fast_on_rate_limit=True, debug_path=last_raw_path
@@ -350,9 +346,7 @@ def run_generate_tweets_crewai() -> None:
                     except RateLimitHit as exc:
                         retry_after = parse_retry_after_seconds(str(exc))
                         delay = max(retry_after or 0, 60.0)
-                        pipeline_logger.warning(
-                            "Rate limit hit. Sleeping for %s seconds.", delay
-                        )
+                        pipeline_logger.warning("Rate limit hit. Sleeping for %s seconds.", delay)
                         time.sleep(delay + 0.25)
                         rate_limit_triggered = True
                         break
@@ -367,9 +361,7 @@ def run_generate_tweets_crewai() -> None:
                     _append_text(last_raw_path, "RAW OUTPUT\n" + raw_str + "\n\n")
 
                     try:
-                        default_type = (
-                            active_types[0].name.strip() if active_types else None
-                        )
+                        default_type = active_types[0].name.strip() if active_types else None
                         data = parse_tweets_response(
                             raw_str,
                             n_tweets=effective_n_tweets,
@@ -400,9 +392,7 @@ def run_generate_tweets_crewai() -> None:
                             raise
                         _append_text(last_raw_path, "RAW OUTPUT\n" + raw_str + "\n\n")
                         try:
-                            default_type = (
-                                active_types[0].name.strip() if active_types else None
-                            )
+                            default_type = active_types[0].name.strip() if active_types else None
                             data = parse_tweets_response(
                                 raw_str,
                                 n_tweets=effective_n_tweets,
@@ -412,19 +402,13 @@ def run_generate_tweets_crewai() -> None:
                             continue
 
                     required_types = [t.name.strip() for t in active_types]
-                    data["tweets"] = assign_missing_types(
-                        data["tweets"], required_types
-                    )
-                    data["tweets"] = [
-                        normalize_candidate_fields(t) for t in data["tweets"]
-                    ]
+                    data["tweets"] = assign_missing_types(data["tweets"], required_types)
+                    data["tweets"] = [normalize_candidate_fields(t) for t in data["tweets"]]
 
                     max_travel_hack = 1
                     allowed_types = {t.name.strip().lower() for t in active_types}
                     type_limits = (
-                        {t.name.strip().lower(): 1 for t in active_types}
-                        if forced_types
-                        else None
+                        {t.name.strip().lower(): 1 for t in active_types} if forced_types else None
                     )
 
                     embedding_threshold = (
@@ -433,9 +417,7 @@ def run_generate_tweets_crewai() -> None:
                         and (settings.embedding_api_key or settings.openai_api_key)
                         else None
                     )
-                    recent_for_embeddings = recent_context[
-                        : settings.embedding_history_max
-                    ]
+                    recent_for_embeddings = recent_context[: settings.embedding_history_max]
                     recent_embeddings = None
                     candidate_embeddings = None
                     candidate_texts = [
@@ -446,20 +428,14 @@ def run_generate_tweets_crewai() -> None:
                     embedding_error = None
                     if embedding_threshold and not embedding_disabled:
                         try:
-                            recent_embeddings = embed_texts(
-                                recent_for_embeddings, settings
-                            )
-                            candidate_embeddings = build_embedding_map(
-                                candidate_texts, settings
-                            )
+                            recent_embeddings = embed_texts(recent_for_embeddings, settings)
+                            candidate_embeddings = build_embedding_map(candidate_texts, settings)
                         except Exception as exc:
                             embedding_error = str(exc)
                             if is_embedding_auth_error(exc):
                                 embedding_disabled = True
                                 embedding_error += " (embedding disabled)"
-                            pipeline_logger.warning(
-                                "Embedding error: %s", embedding_error
-                            )
+                            pipeline_logger.warning("Embedding error: %s", embedding_error)
 
                         _append_text(
                             last_raw_path,
@@ -514,9 +490,7 @@ def run_generate_tweets_crewai() -> None:
             break
         if rate_limit_triggered and not force_minimal:
             force_minimal = True
-            pipeline_logger.warning(
-                "Rate limit triggered; retrying with minimal settings"
-            )
+            pipeline_logger.warning("Rate limit triggered; retrying with minimal settings")
             continue
         break
 
