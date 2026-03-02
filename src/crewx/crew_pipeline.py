@@ -5,6 +5,7 @@ import logging
 import re
 import time
 from pathlib import Path
+from uuid import uuid4
 
 from crewai import Agent, Crew, Process, Task
 
@@ -26,7 +27,7 @@ from crewx.io import (
     write_text,
 )
 from crewx.llm import build_llm
-from crewx.logging_utils import setup_logging
+from crewx.logging_utils import log_event, setup_logging
 from crewx.parsing import TweetType, parse_tweet_types_md, parse_tweets_response
 from crewx.prompts_pipeline import (
     build_generator_prompt,
@@ -197,9 +198,25 @@ def run_generate_tweets_crewai() -> None:
     apply_litellm_env()
     settings = load_settings()
     ensure_dir(settings.out_dir)
-    setup_logging(settings.out_dir, verbose=settings.verbose)
+    run_id = f"{now_timestamp()}_{uuid4().hex[:8]}"
+    setup_logging(
+        settings.out_dir,
+        verbose=settings.verbose,
+        run_id=run_id,
+        json_logs=settings.log_json,
+        log_dir=settings.log_dir,
+    )
     pipeline_logger = logging.getLogger(LOGGER_NAME)
-    pipeline_logger.info("Starting tweet generation")
+    log_event(
+        pipeline_logger,
+        "run_start",
+        run_id=run_id,
+        model=settings.openai_model_name,
+        n_tweets=settings.n_tweets,
+        recent_max=settings.recent_tweets_max,
+        forced_types=list(settings.forced_tweet_types),
+        temperature=settings.temperature,
+    )
 
     company_md = read_text(settings.tweets_md_path)
     types_md = read_text(settings.tweet_types_md_path)
@@ -265,10 +282,15 @@ def run_generate_tweets_crewai() -> None:
     base_active_types = active_types
 
     last_raw_path = f"{settings.out_dir}/last_raw_output.txt"
-    write_text(last_raw_path, "")
+    write_text(last_raw_path, f"RUN ID\n{run_id}\n\n")
     tweets: list[dict] = []
     max_attempts = 3
     embedding_disabled = False
+    total_attempts = 0
+    rate_limit_hits = 0
+    generated_count = 0
+    accepted_count = 0
+    fallback_used = False
 
     def _build_context_limits(force_minimal: bool) -> list[int]:
         if force_minimal:
@@ -339,6 +361,7 @@ def run_generate_tweets_crewai() -> None:
                 )
 
                 for _attempt in range(max_attempts):
+                    total_attempts += 1
                     try:
                         raw_str = kickoff_with_retry(
                             crew, fail_fast_on_rate_limit=True, debug_path=last_raw_path
@@ -346,6 +369,13 @@ def run_generate_tweets_crewai() -> None:
                     except RateLimitHit as exc:
                         retry_after = parse_retry_after_seconds(str(exc))
                         delay = max(retry_after or 0, 60.0)
+                        rate_limit_hits += 1
+                        log_event(
+                            pipeline_logger,
+                            "rate_limit",
+                            delay=delay,
+                            attempt=total_attempts,
+                        )
                         pipeline_logger.warning("Rate limit hit. Sleeping for %s seconds.", delay)
                         time.sleep(delay + 0.25)
                         rate_limit_triggered = True
@@ -369,6 +399,7 @@ def run_generate_tweets_crewai() -> None:
                         )
                     except ValueError:
                         try:
+                            total_attempts += 1
                             raw_str = kickoff_with_retry(
                                 review_only_crew,
                                 fail_fast_on_rate_limit=True,
@@ -377,6 +408,13 @@ def run_generate_tweets_crewai() -> None:
                         except RateLimitHit as exc:
                             retry_after = parse_retry_after_seconds(str(exc))
                             delay = max(retry_after or 0, 60.0)
+                            rate_limit_hits += 1
+                            log_event(
+                                pipeline_logger,
+                                "rate_limit",
+                                delay=delay,
+                                attempt=total_attempts,
+                            )
                             pipeline_logger.warning(
                                 "Rate limit hit. Sleeping for %s seconds.", delay
                             )
@@ -404,6 +442,7 @@ def run_generate_tweets_crewai() -> None:
                     required_types = [t.name.strip() for t in active_types]
                     data["tweets"] = assign_missing_types(data["tweets"], required_types)
                     data["tweets"] = [normalize_candidate_fields(t) for t in data["tweets"]]
+                    generated_count = len(data["tweets"])
 
                     max_travel_hack = 1
                     allowed_types = {t.name.strip().lower() for t in active_types}
@@ -462,6 +501,8 @@ def run_generate_tweets_crewai() -> None:
                             ):
                                 fallback = [t]
                                 break
+                        if fallback:
+                            fallback_used = True
                         tweets = fallback
 
                     if tweets:
@@ -477,6 +518,7 @@ def run_generate_tweets_crewai() -> None:
                         )
 
                     if tweets:
+                        accepted_count = len(tweets)
                         pipeline_logger.info("Accepted %s tweets", len(tweets))
                         break
 
@@ -526,7 +568,27 @@ def run_generate_tweets_crewai() -> None:
     payload = {"tweets": deduped_output}
     write_json(out_queue_path, {"queue": payload["tweets"]})
     pipeline_logger.info("Wrote post queue: %s", out_queue_path)
+    log_event(
+        pipeline_logger,
+        "run_metrics",
+        run_id=run_id,
+        attempts=total_attempts,
+        rate_limit_hits=rate_limit_hits,
+        generated=generated_count,
+        accepted=accepted_count,
+        output=len(deduped_output),
+        fallback_used=fallback_used,
+        out_queue_path=out_queue_path,
+    )
 
     history_path = f"{settings.out_dir}/history.jsonl"
     for t in payload["tweets"]:
         append_jsonl(history_path, t)
+
+    log_event(
+        pipeline_logger,
+        "run_complete",
+        run_id=run_id,
+        history_path=history_path,
+        output_count=len(payload["tweets"]),
+    )
