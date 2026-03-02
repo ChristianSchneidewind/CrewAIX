@@ -38,6 +38,10 @@ class Settings:
     # Optional: force specific tweet types per run
     forced_tweet_types: tuple[str, ...] = field(default_factory=tuple)
 
+    # Logging
+    log_json: bool = True
+    log_dir: str | None = None
+
 
 def _get_env(name: str, default: str | None = None) -> str | None:
     v = os.getenv(name)
@@ -89,6 +93,15 @@ def load_settings() -> Settings:
         "on",
     }
 
+    log_json = (_get_env("LOG_JSON", "true") or "true").lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }
+    log_dir = _get_env("LOG_DIR", None)
+
     if not openai_api_key:
         raise ValueError(
             "OPENAI_API_KEY is missing. Set it in your .env before running cloud-only generation."
@@ -113,6 +126,8 @@ def load_settings() -> Settings:
         embedding_similarity_threshold=embedding_similarity_threshold,
         embedding_history_max=embedding_history_max,
         forced_tweet_types=forced_tweet_types,
+        log_json=log_json,
+        log_dir=log_dir,
     )
 
 
