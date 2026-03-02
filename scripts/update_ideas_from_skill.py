@@ -19,7 +19,9 @@ def _find_default_source_dir() -> Path:
     tmp_root = Path("/tmp")
     if tmp_root.exists():
         tmp_matches = sorted(
-            tmp_root.glob("skills-*/tweet-ideas"), key=lambda p: p.stat().st_mtime, reverse=True
+            tmp_root.glob("skills-*/tweet-ideas"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
         )
         for match in tmp_matches:
             if match.exists() and match.is_dir():
@@ -47,12 +49,23 @@ BUCKET_KEYWORDS = {
         "koffer",
         "gepäckband",
     ],
-    "gepaeckverlust": ["gepäckverlust", "gepaeckverlust", "verloren", "beschädigt", "beschädigung"],
+    "gepaeckverlust": [
+        "gepäckverlust",
+        "gepaeckverlust",
+        "verloren",
+        "beschädigt",
+        "beschädigung",
+    ],
     "checkin_sitzplatz": ["check-in", "checkin", "sitzplatz", "boardingpass"],
     "anschlussflug": ["anschlussflug", "umsteigen", "zubringer", "umsteig"],
     "wetter_irrops": ["wetter", "sturm", "schnee", "gewitter", "nebel"],
     "streik": ["streik", "arbeitskampf", "gewerkschaft"],
-    "codeshare": ["codeshare", "code-share", "ausführende airline", "durchführende airline"],
+    "codeshare": [
+        "codeshare",
+        "code-share",
+        "ausführende airline",
+        "durchführende airline",
+    ],
     "sicherheit": ["sicherheitskontrolle", "security", "flüssig", "laptop"],
     "reiseruecktritt_kulanz": [
         "reiserücktritt",

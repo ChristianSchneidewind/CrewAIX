@@ -1,269 +1,65 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
+from typing import Any
 
-DOCUMENT_PATTERNS = [
-    "boardingpass",
-    "buchungsbestätigung",
-    "buchungsdetails",
-    "airline-nachricht",
-    "airline-nachrichten",
-    "nachrichten der airline",
-    "flugunterlagen",
-    "reisedokumente",
-    "e-mail",
-    "e-mails",
-    "email",
-    "e mail",
-    "sms",
-]
+import yaml
 
-KEYWORD_QUOTAS = {
-    "gate_changes": {
-        "needles": ["gate-änder", "gate ändern", "gate-wechsel", "anzeigetafel", "anzeigen"],
-        "max_per_batch": 1,
-    },
-    "connections": {
-        "needles": [
-            "umsteig",
-            "umsteigezeit",
-            "umsteigezeiten",
-            "anschlussflug",
-            "zubringer",
-            "puffer",
-        ],
-        "max_per_batch": 1,
-    },
-    "eu261": {
-        "needles": ["eu-verordnung 261/2004", "verordnung 261/2004", "eu261", "eu-261"],
-        "max_per_batch": 1,
-    },
-    "annullierung": {
-        "needles": ["annull", "gestrichen"],
-        "max_per_batch": 1,
-    },
-    "verspaetung": {
-        "needles": ["verspät", "verspaet"],
-        "max_per_batch": 1,
-    },
-    "ueberbuchung": {
-        "needles": ["überbuch", "ueberbuch", "boarding verweigert", "nicht mitfliegen"],
-        "max_per_batch": 1,
-    },
-    "entschaedigung": {
-        "needles": ["entschäd", "entschaed", "kompensation", "ausgleichszahlung"],
-        "max_per_batch": 1,
-    },
-}
 
-KEYWORD_HISTORY_LIMITS = {
-    "gate_changes": 0,
-    "connections": 1,
-    "eu261": 0,
-    "annullierung": 999,
-    "verspaetung": 999,
-    "ueberbuchung": 999,
-    "entschaedigung": 999,
-}
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
 
-TIP_LANGUAGE = [
-    "tipp",
-    "empfiehlt",
-    "hilft",
-    "vermeiden",
-    "behalten sie",
-    "prüfen sie",
-    "planen sie",
-    "sollten",
-    "anspruchs-check",
-    "anspruchscheck",
-    "lohnt sich",
-    "wichtig ist",
-    "sofort",
-    "am besten",
-    "trinken sie",
-    "packen sie",
-    "bleiben sie",
-    "achten sie",
-]
 
-MAX_TYPES_PER_BATCH = {
-    "travel_hack": 1,
-    "passenger_rights_quick": 1,
-}
+def _load_rules() -> dict[str, Any]:
+    path = _project_root() / "config" / "rules.yaml"
+    if not path.exists():
+        raise FileNotFoundError(f"Rules file not found: {path}")
+    with path.open("r", encoding="utf-8") as handle:
+        data = yaml.safe_load(handle) or {}
+    if not isinstance(data, dict):
+        raise ValueError("Rules file must contain a mapping at the top level.")
+    return data
 
-TOPIC_KEYWORDS = [
-    "flug",
-    "airline",
-    "boarding",
-    "gate",
-    "flughafen",
-    "passagier",
-    "flugninja",
-    "flugversp",
-    "annull",
-    "überbuch",
-]
 
-TOPIC_BUCKETS = {
-    "boarding_gate": [
-        "boarding",
-        "gate",
-        "einsteigen",
-        "boarden",
-        "boarding-gruppe",
-        "boardinggruppe",
-    ],
-    "gepaeck_handgepaeck": [
-        "gepäck",
-        "gepaeck",
-        "handgepäck",
-        "handgepaeck",
-        "koffer",
-        "gepäckband",
-    ],
-    "gepaeckverlust": [
-        "gepäckverlust",
-        "gepaeckverlust",
-        "gepäck verspätet",
-        "gepaeck verspätet",
-        "verloren",
-        "beschädigt",
-    ],
-    "checkin_sitzplatz": [
-        "check-in",
-        "checkin",
-        "sitzplatz",
-        "sitz",
-        "boardingpass",
-        "mobile boarding",
-    ],
-    "anschlussflug": [
-        "anschlussflug",
-        "zubringer",
-        "umsteig",
-        "umsteigen",
-        "connection",
-        "transit",
-    ],
-    "wetter_irrops": ["wetter", "sturm", "schnee", "gewitter", "nebel", "vereisung"],
-    "streik": ["streik", "arbeitskampf", "gewerkschaft"],
-    "codeshare": [
-        "codeshare",
-        "code-share",
-        "allianz",
-        "operating carrier",
-        "durchführende airline",
-    ],
-    "sicherheit": [
-        "sicherheitskontrolle",
-        "security",
-        "flughafensicherheit",
-        "kontrolle",
-        "flüssigkeiten",
-        "liquids",
-    ],
-    "reiseruecktritt_kulanz": [
-        "reiserücktritt",
-        "reiseruecktritt",
-        "storno",
-        "umbuchung",
-        "erstattung",
-        "gutschein",
-        "kulanz",
-    ],
-    "vielflieger": ["vielflieger", "status", "meilen", "bonusprogramm", "frequent flyer"],
-    "betreuung": ["betreuung", "verpflegung", "hotel", "transfer", "ersatzbeförderung"],
-}
+def _as_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    return value
+
+
+_rules = _load_rules()
+
+DOCUMENT_PATTERNS = _as_list(_rules.get("document_patterns"))
+KEYWORD_QUOTAS = _as_dict(_rules.get("keyword_quotas"))
+KEYWORD_HISTORY_LIMITS = _as_dict(_rules.get("keyword_history_limits"))
+TIP_LANGUAGE = _as_list(_rules.get("tip_language"))
+MAX_TYPES_PER_BATCH = _as_dict(_rules.get("max_types_per_batch"))
+TOPIC_KEYWORDS = _as_list(_rules.get("topic_keywords"))
+TOPIC_BUCKETS = _as_dict(_rules.get("topic_buckets"))
 
 BUCKET_TAGS = set(TOPIC_BUCKETS.keys())
 
-BUCKET_HISTORY_WINDOW = 15
-BUCKET_HISTORY_MAX = 1
-IDEA_BANK_MAX_ITEMS = 10
-ACTIVE_BUCKETS = [
-    "boarding_gate",
-    "gepaeck_handgepaeck",
-    "checkin_sitzplatz",
-    "wetter_irrops",
-    "streik",
-]
+BUCKET_HISTORY_WINDOW = int(_rules.get("bucket_history_window", 15))
+BUCKET_HISTORY_MAX = int(_rules.get("bucket_history_max", 1))
+IDEA_BANK_MAX_ITEMS = int(_rules.get("idea_bank_max_items", 10))
+ACTIVE_BUCKETS = _as_list(_rules.get("active_buckets"))
 
-BRAND_TERMS = [
-    "flugninja",
-    "flugninja.at",
-    "https://www.flugninja.at/",
-    "#flugninja",
-]
-
-CTA_TERMS = [
-    "mehr infos",
-    "mehr erfahren",
-    "jetzt prüfen",
-    "anspruch prüfen",
-    "kostenlos prüfen",
-    "kostenlose prüfung",
-    "kostenloser anspruchs-check",
-    "anspruchs-check",
-    "anspruchscheck",
-]
-
-DETAIL_KEYWORDS = [
-    "wenn",
-    "falls",
-    "sobald",
-    "vor",
-    "nach",
-    "bei",
-    "am gate",
-    "am band",
-    "sicherheitskontrolle",
-    "check-in",
-    "checkin",
-    "boarding",
-    "koffer",
-    "handgepäck",
-    "handgepaeck",
-    "gepäck",
-    "gepaeck",
-    "schalter",
-    "formular",
-    "ersatz",
-    "umbuch",
-    "gutschein",
-    "verpflegung",
-    "hotel",
-]
+BRAND_TERMS = _as_list(_rules.get("brand_terms"))
+CTA_TERMS = _as_list(_rules.get("cta_terms"))
+DETAIL_KEYWORDS = _as_list(_rules.get("detail_keywords"))
 
 DETAIL_NUMBER_PATTERN = re.compile(r"\d")
 HASHTAG_PATTERN = re.compile(r"#\w+")
 URL_PATTERN = re.compile(r"https?://\S+")
 
-FORBIDDEN_CLAIM_PHRASES = [
-    "abflugort in der eu",
-    "in der eu startet",
-    "in der eu startet oder landet",
-    "startet oder landet",
-    "start oder landung in der eu",
-    "start oder landung",
-    "abflug oder ankunft in österreich",
-    "abflug oder ankunft",
-    "ab start",
-    "ab landung",
-    "ab start oder landung",
-    "eu-airline",
-    "eu airline",
-    "eu-airlines",
-    "eu airlines",
-    "österreich",
-    "überbuchungen sind",
-    "überbuchung ist üblich",
-    "überbuchungen sind üblich",
-    "außergewöhnlich",
-    "außergewöhnliche umstände",
-    "absichtlich überbuch",
-    "um leerplätze zu",
-]
+FORBIDDEN_CLAIM_PHRASES = _as_list(_rules.get("forbidden_claim_phrases"))
 
 
 def is_doc_tip(text: str) -> bool:
@@ -377,34 +173,13 @@ def violates_hard_rules(text: str, *, strict: bool = True) -> bool:
     if "drei stunden" in lower_text:
         return True
 
-    if (
-        "eu-verordnung 261/2004" in lower_text
-        or "verordnung 261/2004" in lower_text
-        or "eu261" in lower_text
-        or "eu-261" in lower_text
-    ):
+    if any(p in lower_text for p in _as_list(_rules.get("forbidden_legal_claims"))):
         return True
 
-    if "bis zu 600" in lower_text or "600 €" in lower_text or "600€" in lower_text:
+    if any(p in lower_text for p in _as_list(_rules.get("forbidden_compensation_claims"))):
         return True
 
-    if "gate-änder" in lower_text or "gate ändern" in lower_text or "gate-wechsel" in lower_text:
-        return True
-    if "anzeigetafel" in lower_text or "anzeigen" in lower_text:
-        return True
-    if "e-mail" in lower_text or "email" in lower_text or "sms" in lower_text:
-        return True
-    if (
-        "buchungsbestätigung" in lower_text
-        or "buchungsdetails" in lower_text
-        or "nachrichten der airline" in lower_text
-    ):
-        return True
-    if "umsteigezeit" in lower_text or "umsteigezeiten" in lower_text or "umsteig" in lower_text:
-        return True
-    if "anschlussflug" in lower_text or "pufferzeit" in lower_text:
-        return True
-    if "checkliste" in lower_text or "drei tipps" in lower_text:
+    if any(p in lower_text for p in _as_list(_rules.get("forbidden_patterns"))):
         return True
 
     if strict:

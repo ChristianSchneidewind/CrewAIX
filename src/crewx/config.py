@@ -81,7 +81,13 @@ def load_settings() -> Settings:
 
     # Temperature/verbose are optional; keep safe defaults
     temperature = float(_get_env("TEMPERATURE", "0.7") or "0.7")
-    verbose = (_get_env("VERBOSE", "false") or "false").lower() in {"1", "true", "yes", "y", "on"}
+    verbose = (_get_env("VERBOSE", "false") or "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }
 
     if not openai_api_key:
         raise ValueError(
