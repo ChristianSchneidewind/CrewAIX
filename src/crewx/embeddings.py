@@ -8,7 +8,11 @@ from litellm import embedding as litellm_embedding
 
 def is_embedding_auth_error(exc: Exception) -> bool:
     message = str(exc).lower()
-    return "invalid_api_key" in message or "incorrect api key" in message or "401" in message
+    return (
+        "invalid_api_key" in message
+        or "incorrect api key" in message
+        or "401" in message
+    )
 
 
 def cosine_similarity(a: Iterable[float], b: Iterable[float]) -> float:
@@ -54,7 +58,11 @@ def embed_texts(texts: list[str], settings) -> list[list[float]]:
                 data = dumped.get("data")
 
     if not data:
-        keys = list(response.keys()) if isinstance(response, dict) else type(response).__name__
+        keys = (
+            list(response.keys())
+            if isinstance(response, dict)
+            else type(response).__name__
+        )
         raise ValueError(f"No embedding data returned (response={keys})")
 
     embeddings: list[list[float]] = []

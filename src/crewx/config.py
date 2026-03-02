@@ -39,7 +39,6 @@ class Settings:
     forced_tweet_types: tuple[str, ...] = field(default_factory=tuple)
 
 
-
 def _get_env(name: str, default: str | None = None) -> str | None:
     v = os.getenv(name)
     if v is None or v.strip() == "":
@@ -50,22 +49,37 @@ def _get_env(name: str, default: str | None = None) -> str | None:
 def load_settings() -> Settings:
     load_dotenv(override=False)
     # Defaults are chosen to match the cloud-only .env conventions
-    openai_api_base = _get_env("OPENAI_API_BASE", "https://api.openai.com/v1") or "https://api.openai.com/v1"
+    openai_api_base = (
+        _get_env("OPENAI_API_BASE", "https://api.openai.com/v1")
+        or "https://api.openai.com/v1"
+    )
     openai_api_key = _get_env("OPENAI_API_KEY", "") or ""
     openai_model_name = _get_env("OPENAI_MODEL_NAME", "gpt-4.1-mini") or "gpt-4.1-mini"
 
-    tweets_md_path = _get_env("TWEETS_MD_PATH", "content/tweets.md") or "content/tweets.md"
-    tweet_types_md_path = _get_env("TWEET_TYPES_MD_PATH", "content/tweet_types.md") or "content/tweet_types.md"
-    crew_roles_md_path = _get_env("CREW_ROLES_MD_PATH", "content/crew_roles.md") or "content/crew_roles.md"
+    tweets_md_path = (
+        _get_env("TWEETS_MD_PATH", "content/tweets.md") or "content/tweets.md"
+    )
+    tweet_types_md_path = (
+        _get_env("TWEET_TYPES_MD_PATH", "content/tweet_types.md")
+        or "content/tweet_types.md"
+    )
+    crew_roles_md_path = (
+        _get_env("CREW_ROLES_MD_PATH", "content/crew_roles.md")
+        or "content/crew_roles.md"
+    )
     ideas_md_path = _get_env("IDEAS_MD_PATH", "content/ideas.md") or "content/ideas.md"
     out_dir = _get_env("OUT_DIR", "out") or "out"
     forced_types_raw = _get_env("FORCE_TWEET_TYPES", "") or ""
-    forced_tweet_types = tuple([t.strip() for t in forced_types_raw.split(",") if t.strip()])
+    forced_tweet_types = tuple(
+        [t.strip() for t in forced_types_raw.split(",") if t.strip()]
+    )
 
     embedding_model_name = _get_env("EMBEDDING_MODEL_NAME", "text-embedding-3-small")
     embedding_api_base = _get_env("EMBEDDING_API_BASE", "https://api.openai.com/v1")
     embedding_api_key = _get_env("EMBEDDING_API_KEY", None)
-    embedding_similarity_threshold = float(_get_env("EMBEDDING_SIMILARITY_THRESHOLD", "0.85") or "0.85")
+    embedding_similarity_threshold = float(
+        _get_env("EMBEDDING_SIMILARITY_THRESHOLD", "0.85") or "0.85"
+    )
     embedding_history_max = int(_get_env("EMBEDDING_HISTORY_MAX", "30") or "30")
 
     # Optional knobs
@@ -74,7 +88,13 @@ def load_settings() -> Settings:
 
     # Temperature/verbose are optional; keep safe defaults
     temperature = float(_get_env("TEMPERATURE", "0.7") or "0.7")
-    verbose = (_get_env("VERBOSE", "false") or "false").lower() in {"1", "true", "yes", "y", "on"}
+    verbose = (_get_env("VERBOSE", "false") or "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }
 
     if not openai_api_key:
         raise ValueError(

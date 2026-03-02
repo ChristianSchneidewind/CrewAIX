@@ -63,8 +63,7 @@ def build_generator_prompt(
     recent_block = "\n".join(f"- {t}" for t in recent[-3:]) if recent else "(none)"
     ideas_block = trim_idea_bank(ideas_md)
     company_block = trim_company_context(company_md)
-    return dedent(
-        f"""
+    return dedent(f"""
         Write German tweets for the company below.
         Output MUST be a JSON array only. Each item is an object with keys:
         tweet_type, opening_style, text, language, tags. No plain strings.
@@ -110,13 +109,11 @@ def build_generator_prompt(
 
         Output:
         [{{"tweet_type":"...","opening_style":"question|tip|scenario|condition|mistake_fix|checklist|myth_vs_fact","text":"...","language":"de","tags":["..."]}}]
-        """
-    ).strip()
+        """).strip()
 
 
 def build_review_prompt(*, n_tweets: int) -> str:
-    return dedent(
-        f"""
+    return dedent(f"""
         You are a strict X (Twitter) compliance reviewer.
         Check the tweets provided in the context and fix or remove any tweet that violates these rules:
         - Max 240 characters
@@ -140,13 +137,11 @@ def build_review_prompt(*, n_tweets: int) -> str:
         Always preserve or set the correct tweet_type for each item.
         If the input is a list of strings, convert each string into this object format
         and assign a suitable tweet_type from the REQUIRED TYPES list.
-        """
-    ).strip()
+        """).strip()
 
 
 def build_quality_prompt(*, n_tweets: int) -> str:
-    return dedent(
-        f"""
+    return dedent(f"""
         You are a quality reviewer for German tweets.
         Keep only tweets that are clear, concrete, and non-redundant.
 
@@ -166,15 +161,12 @@ def build_quality_prompt(*, n_tweets: int) -> str:
         [
           {{"tweet_type": "...", "opening_style": "question|tip|scenario|condition|mistake_fix|checklist|myth_vs_fact", "text": "...", "language": "de", "tags": ["..."]}}
         ]
-        """
-    ).strip()
+        """).strip()
 
 
 def build_post_prompt() -> str:
-    return dedent(
-        """
+    return dedent("""
         Prepare the approved tweets for posting.
         Do NOT change the text. Do NOT add new content.
         Output MUST be a JSON array of the tweets to be queued.
-        """
-    ).strip()
+        """).strip()

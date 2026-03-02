@@ -42,7 +42,6 @@ from crewx.retry import (
 )
 from crewx.rules import extract_bucket, infer_bucket_from_text
 
-
 LOGGER_NAME = "crewx.pipeline"
 
 
@@ -217,11 +216,15 @@ def run_generate_tweets_crewai() -> None:
 
     forced_types = [t.strip().lower() for t in settings.forced_tweet_types if t.strip()]
     if forced_types:
-        active_types = [t for t in all_types if t.name.strip().lower() in set(forced_types)]
+        active_types = [
+            t for t in all_types if t.name.strip().lower() in set(forced_types)
+        ]
     else:
         max_types = min(settings.n_tweets, len(all_types))
         start_idx = _rotation_start_index(settings.out_dir, total_types=len(all_types))
-        active_types = [all_types[(start_idx + i) % len(all_types)] for i in range(max_types)]
+        active_types = [
+            all_types[(start_idx + i) % len(all_types)] for i in range(max_types)
+        ]
         forced_types = [t.name.strip().lower() for t in active_types]
 
     fix_history_unknown_types(settings.out_dir, fallback_type="educational")
@@ -235,24 +238,30 @@ def run_generate_tweets_crewai() -> None:
 
     generator_agent = Agent(
         role=generator_role.get("role") or "Tweet Generator",
-        goal=generator_role.get("goal") or "Generate varied German tweets that follow the provided constraints.",
-        backstory=generator_role.get("backstory") or "You are an expert social media writer for travel and passenger rights.",
+        goal=generator_role.get("goal")
+        or "Generate varied German tweets that follow the provided constraints.",
+        backstory=generator_role.get("backstory")
+        or "You are an expert social media writer for travel and passenger rights.",
         llm=llm,
         verbose=settings.verbose,
     )
 
     reviewer_agent = Agent(
         role=reviewer_role.get("role") or "X Compliance Reviewer",
-        goal=reviewer_role.get("goal") or "Ensure tweets comply with X constraints and style rules.",
-        backstory=reviewer_role.get("backstory") or "You are a strict reviewer who fixes or removes non-compliant tweets.",
+        goal=reviewer_role.get("goal")
+        or "Ensure tweets comply with X constraints and style rules.",
+        backstory=reviewer_role.get("backstory")
+        or "You are a strict reviewer who fixes or removes non-compliant tweets.",
         llm=llm,
         verbose=settings.verbose,
     )
 
     poster_agent = Agent(
         role=poster_role.get("role") or "Tweet Poster",
-        goal=poster_role.get("goal") or "Prepare final tweets for the posting queue without altering content.",
-        backstory=poster_role.get("backstory") or "You only prepare a queue; you never call external APIs.",
+        goal=poster_role.get("goal")
+        or "Prepare final tweets for the posting queue without altering content.",
+        backstory=poster_role.get("backstory")
+        or "You only prepare a queue; you never call external APIs.",
         llm=llm,
         verbose=settings.verbose,
     )
@@ -302,7 +311,9 @@ def run_generate_tweets_crewai() -> None:
                 if forced_types:
                     active_types = base_active_types
                 else:
-                    active_types = base_active_types[: max(1, min(n_tweets, len(base_active_types)))]
+                    active_types = base_active_types[
+                        : max(1, min(n_tweets, len(base_active_types)))
+                    ]
 
                 effective_n_tweets = len(active_types) if forced_types else n_tweets
                 pipeline_logger.info(
@@ -333,24 +344,32 @@ def run_generate_tweets_crewai() -> None:
 
                 for attempt in range(max_attempts):
                     try:
-                        raw_str = kickoff_with_retry(crew, fail_fast_on_rate_limit=True, debug_path=last_raw_path)
+                        raw_str = kickoff_with_retry(
+                            crew, fail_fast_on_rate_limit=True, debug_path=last_raw_path
+                        )
                     except RateLimitHit as exc:
                         retry_after = parse_retry_after_seconds(str(exc))
                         delay = max(retry_after or 0, 60.0)
-                        pipeline_logger.warning("Rate limit hit. Sleeping for %s seconds.", delay)
+                        pipeline_logger.warning(
+                            "Rate limit hit. Sleeping for %s seconds.", delay
+                        )
                         time.sleep(delay + 0.25)
                         rate_limit_triggered = True
                         break
                     except Exception as exc:
                         if is_request_too_large(exc):
-                            pipeline_logger.warning("Request too large; retrying with smaller context")
+                            pipeline_logger.warning(
+                                "Request too large; retrying with smaller context"
+                            )
                             break
                         raise
 
                     _append_text(last_raw_path, "RAW OUTPUT\n" + raw_str + "\n\n")
 
                     try:
-                        default_type = active_types[0].name.strip() if active_types else None
+                        default_type = (
+                            active_types[0].name.strip() if active_types else None
+                        )
                         data = parse_tweets_response(
                             raw_str,
                             n_tweets=effective_n_tweets,
@@ -366,18 +385,24 @@ def run_generate_tweets_crewai() -> None:
                         except RateLimitHit as exc:
                             retry_after = parse_retry_after_seconds(str(exc))
                             delay = max(retry_after or 0, 60.0)
-                            pipeline_logger.warning("Rate limit hit. Sleeping for %s seconds.", delay)
+                            pipeline_logger.warning(
+                                "Rate limit hit. Sleeping for %s seconds.", delay
+                            )
                             time.sleep(delay + 0.25)
                             rate_limit_triggered = True
                             break
                         except Exception as exc:
                             if is_request_too_large(exc):
-                                pipeline_logger.warning("Request too large; retrying with smaller context")
+                                pipeline_logger.warning(
+                                    "Request too large; retrying with smaller context"
+                                )
                                 break
                             raise
                         _append_text(last_raw_path, "RAW OUTPUT\n" + raw_str + "\n\n")
                         try:
-                            default_type = active_types[0].name.strip() if active_types else None
+                            default_type = (
+                                active_types[0].name.strip() if active_types else None
+                            )
                             data = parse_tweets_response(
                                 raw_str,
                                 n_tweets=effective_n_tweets,
@@ -387,33 +412,54 @@ def run_generate_tweets_crewai() -> None:
                             continue
 
                     required_types = [t.name.strip() for t in active_types]
-                    data["tweets"] = assign_missing_types(data["tweets"], required_types)
-                    data["tweets"] = [normalize_candidate_fields(t) for t in data["tweets"]]
+                    data["tweets"] = assign_missing_types(
+                        data["tweets"], required_types
+                    )
+                    data["tweets"] = [
+                        normalize_candidate_fields(t) for t in data["tweets"]
+                    ]
 
                     max_travel_hack = 1
                     allowed_types = {t.name.strip().lower() for t in active_types}
-                    type_limits = {t.name.strip().lower(): 1 for t in active_types} if forced_types else None
+                    type_limits = (
+                        {t.name.strip().lower(): 1 for t in active_types}
+                        if forced_types
+                        else None
+                    )
 
                     embedding_threshold = (
                         settings.embedding_similarity_threshold
-                        if settings.embedding_model_name and (settings.embedding_api_key or settings.openai_api_key)
+                        if settings.embedding_model_name
+                        and (settings.embedding_api_key or settings.openai_api_key)
                         else None
                     )
-                    recent_for_embeddings = recent_context[: settings.embedding_history_max]
+                    recent_for_embeddings = recent_context[
+                        : settings.embedding_history_max
+                    ]
                     recent_embeddings = None
                     candidate_embeddings = None
-                    candidate_texts = [(t.get("text") or "").strip() for t in data["tweets"] if (t.get("text") or "").strip()]
+                    candidate_texts = [
+                        (t.get("text") or "").strip()
+                        for t in data["tweets"]
+                        if (t.get("text") or "").strip()
+                    ]
                     embedding_error = None
                     if embedding_threshold and not embedding_disabled:
                         try:
-                            recent_embeddings = embed_texts(recent_for_embeddings, settings)
-                            candidate_embeddings = build_embedding_map(candidate_texts, settings)
+                            recent_embeddings = embed_texts(
+                                recent_for_embeddings, settings
+                            )
+                            candidate_embeddings = build_embedding_map(
+                                candidate_texts, settings
+                            )
                         except Exception as exc:
                             embedding_error = str(exc)
                             if is_embedding_auth_error(exc):
                                 embedding_disabled = True
                                 embedding_error += " (embedding disabled)"
-                            pipeline_logger.warning("Embedding error: %s", embedding_error)
+                            pipeline_logger.warning(
+                                "Embedding error: %s", embedding_error
+                            )
 
                         _append_text(
                             last_raw_path,
@@ -435,7 +481,9 @@ def run_generate_tweets_crewai() -> None:
                     if not tweets:
                         fallback = []
                         for t in data["tweets"]:
-                            if accept_relaxed_candidate(t, allowed_types=allowed_types, type_limits=type_limits):
+                            if accept_relaxed_candidate(
+                                t, allowed_types=allowed_types, type_limits=type_limits
+                            ):
                                 fallback = [t]
                                 break
                         tweets = fallback
@@ -466,7 +514,9 @@ def run_generate_tweets_crewai() -> None:
             break
         if rate_limit_triggered and not force_minimal:
             force_minimal = True
-            pipeline_logger.warning("Rate limit triggered; retrying with minimal settings")
+            pipeline_logger.warning(
+                "Rate limit triggered; retrying with minimal settings"
+            )
             continue
         break
 

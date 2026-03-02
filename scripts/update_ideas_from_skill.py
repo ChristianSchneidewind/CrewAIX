@@ -18,7 +18,11 @@ def _find_default_source_dir() -> Path:
 
     tmp_root = Path("/tmp")
     if tmp_root.exists():
-        tmp_matches = sorted(tmp_root.glob("skills-*/tweet-ideas"), key=lambda p: p.stat().st_mtime, reverse=True)
+        tmp_matches = sorted(
+            tmp_root.glob("skills-*/tweet-ideas"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
         for match in tmp_matches:
             if match.exists() and match.is_dir():
                 return match
@@ -37,15 +41,40 @@ def _find_latest_file(source_dir: Path) -> Path:
 
 BUCKET_KEYWORDS = {
     "boarding_gate": ["boarding", "gate", "einsteigen", "boarden", "boarding-gruppe"],
-    "gepaeck_handgepaeck": ["gepäck", "gepaeck", "handgepäck", "handgepaeck", "koffer", "gepäckband"],
-    "gepaeckverlust": ["gepäckverlust", "gepaeckverlust", "verloren", "beschädigt", "beschädigung"],
+    "gepaeck_handgepaeck": [
+        "gepäck",
+        "gepaeck",
+        "handgepäck",
+        "handgepaeck",
+        "koffer",
+        "gepäckband",
+    ],
+    "gepaeckverlust": [
+        "gepäckverlust",
+        "gepaeckverlust",
+        "verloren",
+        "beschädigt",
+        "beschädigung",
+    ],
     "checkin_sitzplatz": ["check-in", "checkin", "sitzplatz", "boardingpass"],
     "anschlussflug": ["anschlussflug", "umsteigen", "zubringer", "umsteig"],
     "wetter_irrops": ["wetter", "sturm", "schnee", "gewitter", "nebel"],
     "streik": ["streik", "arbeitskampf", "gewerkschaft"],
-    "codeshare": ["codeshare", "code-share", "ausführende airline", "durchführende airline"],
+    "codeshare": [
+        "codeshare",
+        "code-share",
+        "ausführende airline",
+        "durchführende airline",
+    ],
     "sicherheit": ["sicherheitskontrolle", "security", "flüssig", "laptop"],
-    "reiseruecktritt_kulanz": ["reiserücktritt", "reiseruecktritt", "storno", "umbuch", "erstattung", "kulanz"],
+    "reiseruecktritt_kulanz": [
+        "reiserücktritt",
+        "reiseruecktritt",
+        "storno",
+        "umbuch",
+        "erstattung",
+        "kulanz",
+    ],
     "vielflieger": ["vielflieger", "status", "meilen", "bonusprogramm"],
     "betreuung": ["betreuung", "verpflegung", "hotel", "transfer", "ersatzbeförderung"],
 }
@@ -139,7 +168,15 @@ def main() -> int:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     limited = _balance_ideas(ideas, limit=max(1, args.limit))
 
-    content = ["# Tweet Ideas", "", f"**Generated:** {timestamp}", f"**Source:** {source_path}", "", "---", ""]
+    content = [
+        "# Tweet Ideas",
+        "",
+        f"**Generated:** {timestamp}",
+        f"**Source:** {source_path}",
+        "",
+        "---",
+        "",
+    ]
     content.extend([f"- {idea}" for idea in limited])
     content.append("")
 

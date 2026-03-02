@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from crewx.embeddings import cosine_similarity
 from crewx.rules import (
     BUCKET_HISTORY_MAX,
@@ -25,6 +27,17 @@ from crewx.rules import (
 )
 
 
+def _coerce_tags(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    tags: list[str] = []
+    for item in value:
+        text = str(item).strip()
+        if text:
+            tags.append(text)
+    return tags
+
+
 def normalize_candidate_fields(t: dict) -> dict:
     text = (t.get("text") or "").strip()
     if not text:
@@ -36,7 +49,7 @@ def normalize_candidate_fields(t: dict) -> dict:
     if not (t.get("opening_style") or "").strip():
         t["opening_style"] = infer_opening_style(text)
 
-    tags = t.get("tags") if isinstance(t.get("tags"), list) else []
+    tags = _coerce_tags(t.get("tags"))
     bucket = infer_bucket_from_text(text)
     if bucket and bucket not in tags:
         tags.append(bucket)
@@ -64,7 +77,7 @@ def accept_relaxed_candidate(
     if type_limits and tweet_type in type_limits and type_limits[tweet_type] <= 0:
         return False
 
-    tags = t.get("tags") if isinstance(t.get("tags"), list) else []
+    tags = _coerce_tags(t.get("tags"))
 
     if violates_hard_rules(text):
         return False
@@ -117,7 +130,6 @@ def filter_crewai_tweets(
     bucket_counts: dict[str, int] = {}
     brand_hits = 0
     accepted_embeddings: list[list[float]] = []
-    doc_tip_in_recent = any(is_doc_tip(t) for t in recent_texts)
     recent_scope = recent_texts[:50] if recent_texts else []
     recent_bucket_scope = recent_texts[:BUCKET_HISTORY_WINDOW] if recent_texts else []
     doc_tip_recent_hits = count_keyword_hits(recent_scope, DOCUMENT_PATTERNS)
@@ -131,7 +143,7 @@ def filter_crewai_tweets(
         if allowed_types and tweet_type not in allowed_types:
             continue
 
-        tags = t.get("tags") if isinstance(t.get("tags"), list) else []
+        tags = _coerce_tags(t.get("tags"))
         lower_text = text.lower()
         if not any(k in lower_text for k in TOPIC_KEYWORDS):
             continue
@@ -156,7 +168,9 @@ def filter_crewai_tweets(
                 continue
 
         if is_doc_tip(text):
-            doc_tip_batch_hits = count_keyword_hits([u.get("text", "") for u in filtered], DOCUMENT_PATTERNS)
+            doc_tip_batch_hits = count_keyword_hits(
+                [u.get("text", "") for u in filtered], DOCUMENT_PATTERNS
+            )
             if doc_tip_batch_hits >= 1 or doc_tip_recent_hits >= 1:
                 continue
 
@@ -190,12 +204,21 @@ def filter_crewai_tweets(
 
         keyword_blocked = False
         for key, quota in KEYWORD_QUOTAS.items():
-            needles = quota["needles"]
-            max_per_batch = quota["max_per_batch"]
+            if not isinstance(quota, dict):
+                continue
+            needles = quota.get("needles")
+            max_per_batch = quota.get("max_per_batch")
+            if not isinstance(needles, list) or not isinstance(max_per_batch, int):
+                continue
+            needles = [str(n) for n in needles]
             if any(n in text.lower() for n in needles):
-                batch_hits = count_keyword_hits([u.get("text", "") for u in filtered], needles)
+                batch_hits = count_keyword_hits(
+                    [u.get("text", "") for u in filtered], needles
+                )
                 recent_hits = count_keyword_hits(recent_scope, needles)
                 history_limit = KEYWORD_HISTORY_LIMITS.get(key)
+                if history_limit is not None and not isinstance(history_limit, int):
+                    history_limit = None
                 if batch_hits >= max_per_batch:
                     keyword_blocked = True
                     break
@@ -212,7 +235,10 @@ def filter_crewai_tweets(
             candidate_embedding = candidate_embeddings.get(text)
             if candidate_embedding:
                 pool = (recent_embeddings or []) + accepted_embeddings
-                if any(cosine_similarity(candidate_embedding, emb) >= embedding_threshold for emb in pool):
+                if any(
+                    cosine_similarity(candidate_embedding, emb) >= embedding_threshold
+                    for emb in pool
+                ):
                     continue
                 accepted_embeddings.append(candidate_embedding)
 
@@ -226,7 +252,7 @@ def filter_crewai_tweets(
     unique: list[dict] = []
     seen_buckets: set[str] = set()
     for t in filtered:
-        tags = t.get("tags") if isinstance(t.get("tags"), list) else []
+        tags = _coerce_tags(t.get("tags"))
         bucket = extract_bucket(t.get("text", ""), tags)
         if not bucket or bucket in seen_buckets:
             continue

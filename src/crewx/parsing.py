@@ -59,13 +59,21 @@ def parse_tweet_types_md(md: str) -> list[TweetType]:
         m_style = re.search(r"(?ms)^\s*Style:\s*\n(.*?)(?:\n\s*Rules:\s*\n|\Z)", rest)
         if m_style:
             style_block = m_style.group(1)
-            style = [re.sub(r"^\s*-\s*", "", l).strip() for l in style_block.splitlines() if l.strip().startswith("-")]
+            style = [
+                re.sub(r"^\s*-\s*", "", line).strip()
+                for line in style_block.splitlines()
+                if line.strip().startswith("-")
+            ]
 
         # Rules section bullets
         m_rules = re.search(r"(?ms)^\s*Rules:\s*\n(.*?)(?:\Z)", rest)
         if m_rules:
             rules_block = m_rules.group(1)
-            rules = [re.sub(r"^\s*-\s*", "", l).strip() for l in rules_block.splitlines() if l.strip().startswith("-")]
+            rules = [
+                re.sub(r"^\s*-\s*", "", line).strip()
+                for line in rules_block.splitlines()
+                if line.strip().startswith("-")
+            ]
 
         types.append(TweetType(name=name, goal=goal, style=style, rules=rules))
 
@@ -96,7 +104,9 @@ def _extract_first_json_object(raw: str) -> str | None:
             pass
 
     # Helper to scan for first valid JSON by delimiter
-    def _scan_for_valid_segment(text: str, open_char: str, close_char: str) -> str | None:
+    def _scan_for_valid_segment(
+        text: str, open_char: str, close_char: str
+    ) -> str | None:
         start = text.find(open_char)
         if start == -1:
             return None
@@ -138,7 +148,9 @@ def _normalize_tag(tag: str) -> str:
     return mapping.get(t, t)
 
 
-def parse_tweets_response(raw: str, *, n_tweets: int, default_tweet_type: str | None = None) -> dict[str, Any]:
+def parse_tweets_response(
+    raw: str, *, n_tweets: int, default_tweet_type: str | None = None
+) -> dict[str, Any]:
     """Parse model output into a normalized tweets structure.
 
     Returns: {"tweets": [ {tweet_type,text,language,tags}, ... ] }
@@ -154,7 +166,9 @@ def parse_tweets_response(raw: str, *, n_tweets: int, default_tweet_type: str | 
     except json.JSONDecodeError as e:
         # Give a slightly more helpful error including a snippet
         snippet = json_str[:200].replace("\n", " ")
-        raise ValueError(f"Invalid JSON in model output: {e} | snippet: {snippet!r}") from e
+        raise ValueError(
+            f"Invalid JSON in model output: {e} | snippet: {snippet!r}"
+        ) from e
 
     # Accept either a plain list of tweets OR an object with "tweets" key
     if isinstance(data, list):
