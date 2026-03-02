@@ -31,6 +31,7 @@ from crewx.llm import build_llm
 from crewx.logging_utils import log_event, setup_logging
 from crewx.parsing import TweetType, parse_tweet_types_md, parse_tweets_response
 from crewx.prompts_pipeline import (
+    PROMPT_VERSION,
     build_generator_prompt,
     build_post_prompt,
     build_review_prompt,
@@ -221,6 +222,7 @@ def run_generate_tweets_crewai(
         recent_max=settings.recent_tweets_max,
         forced_types=list(settings.forced_tweet_types),
         temperature=settings.temperature,
+        prompt_version=PROMPT_VERSION,
     )
 
     company_md = read_text(settings.tweets_md_path)
@@ -287,7 +289,10 @@ def run_generate_tweets_crewai(
     base_active_types = active_types
 
     last_raw_path = f"{settings.out_dir}/last_raw_output.txt"
-    write_text(last_raw_path, f"RUN ID\n{run_id}\n\n")
+    write_text(
+        last_raw_path,
+        f"RUN ID\n{run_id}\nPROMPT_VERSION\n{PROMPT_VERSION}\n\n",
+    )
     tweets: list[dict] = []
     max_attempts = 3
     embedding_disabled = False
@@ -574,7 +579,10 @@ def run_generate_tweets_crewai(
 
     payload = {"tweets": deduped_output}
     if not dry_run:
-        write_json(out_queue_path, {"queue": payload["tweets"]})
+        write_json(
+            out_queue_path,
+            {"queue": payload["tweets"], "meta": {"prompt_version": PROMPT_VERSION}},
+        )
         pipeline_logger.info("Wrote post queue: %s", out_queue_path)
     else:
         pipeline_logger.info("Dry run: skipped writing post queue: %s", out_queue_path)
@@ -590,6 +598,7 @@ def run_generate_tweets_crewai(
         fallback_used=fallback_used,
         out_queue_path=out_queue_path,
         dry_run=dry_run,
+        prompt_version=PROMPT_VERSION,
     )
 
     history_path = f"{settings.out_dir}/history.jsonl"
@@ -604,6 +613,7 @@ def run_generate_tweets_crewai(
         history_path=history_path,
         output_count=len(payload["tweets"]),
         dry_run=dry_run,
+        prompt_version=PROMPT_VERSION,
     )
 
     return {
