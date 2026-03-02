@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 
+from crewx.errors import ConfigurationError
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -103,7 +105,7 @@ def load_settings() -> Settings:
     log_dir = _get_env("LOG_DIR", None)
 
     if not openai_api_key:
-        raise ValueError(
+        raise ConfigurationError(
             "OPENAI_API_KEY is missing. Set it in your .env before running cloud-only generation."
         )
 
