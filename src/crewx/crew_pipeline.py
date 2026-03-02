@@ -10,7 +10,7 @@ from uuid import uuid4
 from crewai import Agent, Crew, Process, Task
 
 from crewx.config import apply_litellm_env, load_settings
-from crewx.embeddings import build_embedding_map, embed_texts, is_embedding_auth_error
+from crewx.embeddings import build_embedding_map, embed_texts_cached, is_embedding_auth_error
 from crewx.errors import NoTweetsGeneratedError, NoTweetTypesError, RateLimitError
 from crewx.filters import (
     accept_relaxed_candidate,
@@ -472,7 +472,7 @@ def run_generate_tweets_crewai(
                     embedding_error = None
                     if embedding_threshold and not embedding_disabled:
                         try:
-                            recent_embeddings = embed_texts(recent_for_embeddings, settings)
+                            recent_embeddings = embed_texts_cached(recent_for_embeddings, settings)
                             candidate_embeddings = build_embedding_map(candidate_texts, settings)
                         except Exception as exc:
                             embedding_error = str(exc)
