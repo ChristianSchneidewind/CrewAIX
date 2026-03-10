@@ -1,12 +1,12 @@
 # CrewAiX
 
-Generate German tweets for **FlugNinja** with a lightweight CrewAI pipeline. The project focuses on high-variance, bucketed tweet generation with strict format rules and dedupe logic.
+Generate German X (Twitter) posts for **FlugNinja** with a lightweight CrewAI pipeline. The project focuses on structured tweet generation, strict rule-based filtering, and de-duplication (including optional embedding similarity).
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.12+
 - `uv` (recommended)
-- OpenAI API key (cloud only)
+- OpenAI API key
 
 ## Quick Start
 
@@ -15,19 +15,54 @@ Generate German tweets for **FlugNinja** with a lightweight CrewAI pipeline. The
 uv sync
 
 # set env
-cp .env.example .env  # or create your own .env
+cp .env.example .env
 
-# run
-uv run python src/main.py
+# run generator
+uv run python src/main.py run
 ```
 
-## Company Inputs
+See all CLI options:
 
-Update company-specific inputs in:
+```bash
+uv run python src/main.py --help
+uv run python src/main.py run --help
+```
 
-- `content/tweets.md` (company context, tone, constraints)
-- `content/tweet_types.md` (tweet type definitions)
-- `content/ideas.md` (idea bank)
+## CLI Usage
+
+### Generate tweets
+
+```bash
+uv run python src/main.py run \
+  --n-tweets 3 \
+  --recent 10 \
+  --temperature 0.7 \
+  --json
+```
+
+Common flags:
+
+- `--n-tweets`: number of tweets to generate
+- `--recent`: recent tweets to consider for de-duplication
+- `--model`: override model name
+- `--temperature`: sampling temperature
+- `--out-dir`: output directory
+- `--tweets`, `--tweet-types`, `--crew-roles`, `--ideas`: override content paths
+- `--force-types`: comma-separated list of tweet types to enforce
+- `--embedding-model`, `--embedding-threshold`, `--embedding-history-max`: embedding dedupe controls
+- `--dry-run`: generate but do not write queue/history
+- `--json` or `--plain`: stdout output format
+- `--log-json/--no-log-json`: enable/disable JSONL logging
+- `--log-dir`: custom log directory
+- `-v/--verbose`: verbose logging
+
+### Fix history entries
+
+```bash
+uv run python src/main.py fix-history --fallback-type educational
+```
+
+This replaces `tweet_type=unknown` entries in `out/history.jsonl`.
 
 ## Configuration (.env)
 
@@ -36,10 +71,11 @@ Minimal setup:
 ```env
 OPENAI_API_BASE=https://api.openai.com/v1
 OPENAI_API_KEY=sk-...
-OPENAI_MODEL_NAME=gpt-4.1
+OPENAI_MODEL_NAME=gpt-4.1-mini
 
 TWEETS_MD_PATH=content/tweets.md
 TWEET_TYPES_MD_PATH=content/tweet_types.md
+CREW_ROLES_MD_PATH=content/crew_roles.md
 IDEAS_MD_PATH=content/ideas.md
 OUT_DIR=out
 
@@ -48,32 +84,47 @@ RECENT_TWEETS_MAX=5
 
 TEMPERATURE=0.7
 VERBOSE=false
+LOG_JSON=true
 ```
 
-Optional embedding dedupe (recommended if available):
+Embedding de-duplication (defaults to OpenAI embeddings when `OPENAI_API_KEY` is set):
 
 ```env
 EMBEDDING_MODEL_NAME=text-embedding-3-small
-EMBEDDING_API_KEY=sk-...
+EMBEDDING_API_BASE=https://api.openai.com/v1
+EMBEDDING_API_KEY=sk-...   # optional; falls back to OPENAI_API_KEY
 EMBEDDING_SIMILARITY_THRESHOLD=0.85
 EMBEDDING_HISTORY_MAX=30
 ```
 
+## Company Inputs
+
+Update company-specific inputs in:
+
+- `content/tweets.md` (company context, tone, constraints)
+- `content/tweet_types.md` (tweet type definitions)
+- `content/crew_roles.md` (CrewAI agent roles)
+- `content/ideas.md` (idea bank, optional)
+
 ## How It Works
 
-- **Generator → Reviewer → Poster** (quality stage removed for lower token usage).
-- **Buckets**: each tweet must include exactly one bucket tag.
-- **Dedupe**:
-  - one tweet per bucket in a batch
-  - bucket cannot repeat within the last `BUCKET_HISTORY_WINDOW`
-  - optional embedding-based similarity filter
+- **Generator → Reviewer → Poster** CrewAI pipeline.
+- **Tweet type rotation**: if no `FORCE_TWEET_TYPES`, types are rotated based on history length.
+- **Rules & buckets**: constraints and active buckets are in `config/rules.yaml`.
+- **De-duplication**:
+  - recent-history text filtering
+  - one bucket and one tweet type per output
+  - keyword quotas and history limits
+  - optional embedding similarity filter
 - **Output**:
-  - queued tweets saved to `out/post_queue_*.json`
+  - queue saved to `out/post_queue_<timestamp>.json`
   - history appended to `out/history.jsonl`
+  - raw LLM output saved to `out/last_raw_output.txt`
+  - logs stored in `out/logs` (text + optional JSONL)
 
-## Bucket Set (active)
+## Active Buckets
 
-Currently restricted to 5 buckets for lower prompt size:
+Default active buckets (from `config/rules.yaml`):
 
 - `boarding_gate`
 - `gepaeck_handgepaeck`
@@ -81,11 +132,13 @@ Currently restricted to 5 buckets for lower prompt size:
 - `wetter_irrops`
 - `streik`
 
+You can adjust the active list and keywords in `config/rules.yaml`.
+
 ## Idea Bank
 
-The prompt uses a trimmed subset of the idea bank (top 10 items) to reduce tokens while keeping semantic variety.
+Only a trimmed subset of the idea bank is passed into prompts (see `idea_bank_max_items` in `config/rules.yaml`).
 
-Generate/refresh the idea bank:
+Update ideas via:
 
 ```bash
 python3 scripts/prepare_ideas_source.py
@@ -94,21 +147,16 @@ python3 scripts/prepare_ideas_source.py
 python3 scripts/update_ideas_from_skill.py --source /tmp/skills-*/tweet-ideas/tweets-*.md
 ```
 
-## Notes
-
-- `.env` is loaded via `load_dotenv`.
-- Rate limits are handled with automatic retries (uses `retry_after` if provided).
-- If you see frequent 429s, reduce `N_TWEETS`, `RECENT_TWEETS_MAX`, or trim the idea bank further.
-
-## License
-
-MIT
-
 ## Project Structure
 
 ```
 content/           # source content + idea bank
+config/            # rules + bucket configuration
 src/crewx/         # pipeline + parsing + config
-out/               # outputs + history
+out/               # outputs + history + logs
 scripts/           # idea bank helpers
 ```
+
+## License
+
+MIT
